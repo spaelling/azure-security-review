@@ -40,3 +40,24 @@ function Get-GroupMembers {
         }
     }  
 }
+
+function Get-EntraIdRoleAssignment {
+    [CmdletBinding()]
+    param (
+        [string]$RoleName
+    )
+    
+    # Get the directory role id for $RoleName
+    $DirectoryRoleId = Get-MgDirectoryRole -Filter "DisplayName eq '$RoleName'" | Select-Object -ExpandProperty Id
+    # Get currently assigned
+    $Assigned = Get-MgDirectoryRoleMember -DirectoryRoleId $DirectoryRoleId  
+
+    # Get the role definition id for $RoleName
+    $DirectoryRoleDefinitionId = Get-MgBetaRoleManagementDirectoryRoleDefinition -Filter "DisplayName eq '$RoleName'" -Property "id" | Select-Object -ExpandProperty Id
+    # get principals that are eligble for GA
+    [array]$EligeblePrincipals = Get-MgBetaRoleManagementDirectoryRoleEligibilityScheduleInstance -Filter "roleDefinitionId eq '$DirectoryRoleDefinitionId'" | Select-Object -ExpandProperty PrincipalId
+    # recursively get group members
+    $Eligeble = Get-GroupMembers -DirectoryObjectByIds $EligeblePrincipals
+    # sort unique to remove duplicates (eligble and assigned)
+    $Assigned + $Eligeble | Sort-Object -Unique -Property Id
+}
