@@ -24,3 +24,13 @@ Combined with Markdown allows for verbosity to a level that an Excel sheet canno
 choco install anaconda3
 # go drink a coffee - this takes a while
 ```
+
+## Development
+
+Figuring out how to gather the necessary data for a control or recommendation can sometimes be difficult. For Microsoft Graph I work with [Microsoft Graph REST API v1.0 endpoint reference](https://learn.microsoft.com/en-us/graph/api/overview?view=graph-rest-1.0) (and sometimes the beta API).
+
+It can sometimes help to use ex. the Azure portal and have the developer tools open. Filter for ex. `graph` to get an idea of how the portal works with the Graph API.
+
+Use [Graph Explorer](https://developer.microsoft.com/en-us/graph/graph-explorer) to test. Both the explorer and endpoint reference documentation has code snippets.
+
+It is not always clear what permissions are required. Most of the time it is clearly stated. If possible work with only `read` permissions.
