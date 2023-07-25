@@ -17,7 +17,7 @@ function Invoke-AzResourceGraphCheck {
 function Get-GroupMembers {
     [CmdletBinding()]
     param (
-        $DirectoryObjectByIds,
+        [array]$DirectoryObjectByIds,
         $DebugMode = $false
     )
     $params = @{
@@ -26,6 +26,10 @@ function Get-GroupMembers {
             "user"
             "group"
         )
+    }
+
+    if ($null -eq $DirectoryObjectByIds -or $DirectoryObjectByIds.Count -eq 0) {
+        return $()
     }
 
     $DirectoryObject = Get-MgDirectoryObjectById -BodyParameter $params
