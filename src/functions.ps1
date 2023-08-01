@@ -48,17 +48,28 @@ function Get-GroupMembers {
 function Get-EntraIdRoleAssignment {
     [CmdletBinding()]
     param (
-        [string]$RoleName
+        [string]$RoleName = $null
+        # [string]$DirectoryRoleDefinitionId = $null
     )
-    
-    # Get the directory role id for $RoleName
-    $DirectoryRoleId = Get-MgDirectoryRole -Filter "DisplayName eq '$RoleName'" | Select-Object -ExpandProperty Id
-    # Get currently assigned
-    $Assigned = Get-MgDirectoryRoleMember -DirectoryRoleId $DirectoryRoleId  
 
-    # Get the role definition id for $RoleName
+    if ([string]::IsNullOrEmpty($RoleName)) {
+        throw "Must supply a rolename"
+    }
+
+    # Get the directory role id
+    # NOTE: The role must be activated in tenant for a successful response.
+    $DirectoryRoleId = Get-MgDirectoryRole -Filter "DisplayName eq '$RoleName'" | Select-Object -ExpandProperty Id
+    Write-Verbose "`$DirectoryRoleId = $DirectoryRoleId"
+    # Get currently assigned
+    $Assigned = $()
+    if ($null -ne $DirectoryRoleId) {
+        $Assigned = Get-MgDirectoryRoleMember -DirectoryRoleId $DirectoryRoleId  
+    }
+
+    # Get the role definition id
     $DirectoryRoleDefinitionId = Get-MgBetaRoleManagementDirectoryRoleDefinition -Filter "DisplayName eq '$RoleName'" -Property "id" | Select-Object -ExpandProperty Id
-    # get principals that are eligble for GA
+    
+    # get principals that are eligble for the role
     [array]$EligeblePrincipals = Get-MgBetaRoleManagementDirectoryRoleEligibilityScheduleInstance -Filter "roleDefinitionId eq '$DirectoryRoleDefinitionId'" | Select-Object -ExpandProperty PrincipalId
     # recursively get group members
     $Eligeble = Get-GroupMembers -DirectoryObjectByIds $EligeblePrincipals
