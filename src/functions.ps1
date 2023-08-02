@@ -63,7 +63,7 @@ function Get-EntraIdRoleAssignment {
     # Get currently assigned
     $Assigned = $()
     if ($null -ne $DirectoryRoleId) {
-        $Assigned = Get-MgDirectoryRoleMember -DirectoryRoleId $DirectoryRoleId  
+        [array]$Assigned = Get-MgDirectoryRoleMember -DirectoryRoleId $DirectoryRoleId  
     }
 
     # Get the role definition id
@@ -72,7 +72,7 @@ function Get-EntraIdRoleAssignment {
     # get principals that are eligble for the role
     [array]$EligeblePrincipals = Get-MgBetaRoleManagementDirectoryRoleEligibilityScheduleInstance -Filter "roleDefinitionId eq '$DirectoryRoleDefinitionId'" | Select-Object -ExpandProperty PrincipalId
     # recursively get group members
-    $Eligeble = Get-GroupMembers -DirectoryObjectByIds $EligeblePrincipals
+    [array]$Eligeble = Get-GroupMembers -DirectoryObjectByIds $EligeblePrincipals
     # sort unique to remove duplicates (eligble and assigned)
     $Assigned + $Eligeble | Sort-Object -Unique -Property Id
 }
