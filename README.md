@@ -1,8 +1,8 @@
 # Azure Security Review
 
-An attempt to create a Jupyter Notebook (using Polyglot) to codify the [Azure Security Review Checklist](https://github.com/Azure/review-checklists) and other general security recommendations.
+An attempt to create a Jupyter Notebook (using Polyglot) to codify the [Azure Security Review Checklist](https://github.com/Azure/review-checklists) and other general security recommendations, like [Microsoft Security Benchmarks](https://learn.microsoft.com/en-us/security/benchmark/azure/overview).
 
-The goal is to include all the checklist items to the extend that it is possibly to gain insights using code.
+The goal is to include all the checklist items and controls to the extend that it is possibly to gain insights using code.
 
 The notebook approach allows for use of many different languages and frameworks. We can use Microsoft Graph to gain insights into Entra ID (Azure AD), and we can use Azure Resource Graph combined with Azure Powershell or Az cli. But C#, Python, Javascript, etc. is also viable options.
 
@@ -24,6 +24,8 @@ Combined with Markdown allows for verbosity to a level that an Excel sheet canno
 choco install anaconda3
 # go drink a coffee - this takes a while
 ```
+
+Note that this also works in MacOS.
 
 ## Development
 
