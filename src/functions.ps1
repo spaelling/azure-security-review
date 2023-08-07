@@ -48,31 +48,29 @@ function Get-GroupMembers {
 function Get-EntraIdRoleAssignment {
     [CmdletBinding()]
     param (
-        [string]$RoleName = $null
-        # [string]$DirectoryRoleDefinitionId = $null
+        [string]$RoleName = $null,
+        [switch]$ExcludeEligebleRoles
     )
 
     if ([string]::IsNullOrEmpty($RoleName)) {
         throw "Must supply a rolename"
     }
 
-    # Get the directory role id
-    # NOTE: The role must be activated in tenant for a successful response.
-    $DirectoryRoleId = Get-MgDirectoryRole -Filter "DisplayName eq '$RoleName'" | Select-Object -ExpandProperty Id
-    Write-Verbose "`$DirectoryRoleId = $DirectoryRoleId"
-    # Get currently assigned
-    $Assigned = $()
-    if ($null -ne $DirectoryRoleId) {
-        [array]$Assigned = Get-MgDirectoryRoleMember -DirectoryRoleId $DirectoryRoleId  
-    }
-
     # Get the role definition id
     $DirectoryRoleDefinitionId = Get-MgBetaRoleManagementDirectoryRoleDefinition -Filter "DisplayName eq '$RoleName'" -Property "id" | Select-Object -ExpandProperty Id
     
-    # get principals that are eligble for the role
-    [array]$EligeblePrincipals = Get-MgBetaRoleManagementDirectoryRoleEligibilityScheduleInstance -Filter "roleDefinitionId eq '$DirectoryRoleDefinitionId'" | Select-Object -ExpandProperty PrincipalId
+    # only get those that are assigned
+    $Filter = "roleDefinitionId eq '$DirectoryRoleDefinitionId' and AssignmentType eq 'Assigned'"
+    [array]$AssignedPrincipals = Get-MgBetaRoleManagementDirectoryRoleAssignmentScheduleInstance -Filter $Filter | Select-Object -ExpandProperty PrincipalId
     # recursively get group members
-    [array]$Eligeble = Get-GroupMembers -DirectoryObjectByIds $EligeblePrincipals
+    $Assigned = Get-GroupMembers -DirectoryObjectByIds $AssignedPrincipals | Sort-Object -Unique -Property Id
+    if (-not $ExcludeEligebleRoles.IsPresent) {
+        $Filter = "roleDefinitionId eq '$DirectoryRoleDefinitionId'"
+        # get principals that are eligble for the role
+        [array]$EligeblePrincipals = Get-MgBetaRoleManagementDirectoryRoleEligibilityScheduleInstance -Filter $Filter | Select-Object -ExpandProperty PrincipalId
+        # recursively get group members
+        [array]$Eligeble = Get-GroupMembers -DirectoryObjectByIds $EligeblePrincipals
+    }
     # sort unique to remove duplicates (eligble and assigned)
     $Assigned + $Eligeble | Sort-Object -Unique -Property Id
 }
