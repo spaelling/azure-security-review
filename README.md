@@ -27,6 +27,10 @@ choco install anaconda3
 
 Note that this also works in MacOS.
 
+## Preview
+
+![](notebooks/media/iam.gif)
+
 ## Development
 
 Figuring out how to gather the necessary data for a control or recommendation can sometimes be difficult. For Microsoft Graph I work with [Microsoft Graph REST API v1.0 endpoint reference](https://learn.microsoft.com/en-us/graph/api/overview?view=graph-rest-1.0) (and sometimes the beta API).
