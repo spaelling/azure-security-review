@@ -24,8 +24,41 @@ Combined with Markdown allows for verbosity to a level that an Excel sheet canno
 choco install anaconda3
 # go drink a coffee - this takes a while
 ```
+We need to make sure a few prequisite modules are installed
 
-Note that this also works in MacOS.
+- Az (Azure Powershell)
+- Az.ResourceGraph
+- Microsoft.Graph
+
+Note that `Microsoft.Graph` is a collection of many modules. We just check one of them.
+
+If there are multiple of the same modules listed then you have Microsoft.Graph modules installed in multiple places and possibly multiple different versions.
+
+I would suggest completely uninstalling and then install the necessary modules. Also beware if you are installing to PowerShell Desktop or Core, check `$PSVersionTable`.
+
+```powershell
+$MGModuleNames = 'Microsoft.Graph.Identity.DirectoryManagement', 'Microsoft.Graph.Authentication', 'Microsoft.Graph.Identity.SignIns', 'Microsoft.Graph.Groups', 'Microsoft.Graph.DirectoryObjects', 'Microsoft.Graph.Users', 'Microsoft.Graph.Applications'
+$MGModuleNames | % {Install-Module -Name $_ -Scope AllUsers -Force -Verbose}
+# beta modules
+$MGModuleNames = 'Microsoft.Graph.Beta.Identity.SignIns', 'Microsoft.Graph.Beta.Identity.Governance', 'Microsoft.Graph.Beta.Applications', 'Microsoft.Graph.Beta.Identity.DirectoryManagement'
+$MGModuleNames | % {Install-Module -Name $_ -Scope AllUsers -Force -Verbose -AllowClobber}
+```
+
+Note that this installation takes a while to complete.
+
+You can list the modules, versions and their install location using
+
+```powershell
+Get-Module -ListAvailable | Where-Object {$_.Name -like "Microsoft.Graph*"}
+```
+
+Beware of having multiple versions or differing versions installed. You can encounter this error `Assembly with same name is already loaded` if two different modules are loading two different assemblies with the same name but different versions. Avoid this by always using the latest version.
+
+Update all MG modules using
+
+```powershell
+Get-Module -ListAvailable | Where-Object {$_.Name -like "*Microsoft.Graph.*"} | Update-Module -Force
+```
 
 ## Preview
 
