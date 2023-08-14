@@ -60,6 +60,20 @@ Update all MG modules using
 Get-Module -ListAvailable | Where-Object {$_.Name -like "*Microsoft.Graph.*"} | Update-Module -Force
 ```
 
+We will also be using a comminty module 
+
+```powershell
+Install-Module -Name AzResourceGraphPS
+```
+
+and for PS Core only users we need `Out-GridView` (Windows GUI elements not available in PS Core)
+
+```powershell
+Install-Module Microsoft.PowerShell.ConsoleGuiTools
+# And set the alias - note this is just for the session.
+Set-Alias -Name Out-GridView -Value Out-ConsoleGridview
+```
+
 ## Preview
 
 ![](notebooks/media/iam.gif)
