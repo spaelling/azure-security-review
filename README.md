@@ -16,14 +16,15 @@ These are what is currently working.
   - Privileged **administration
     - Limit the number of Global Administrators to less than 5
     - Synchronized accounts
-    - Use groups for Azure AD role assignments
+    - Use groups for Azure AD role assignments (Work in Progress)
     - PIM Alerts
     - Recurring access reviews
     - Access Reviews: Enabled for all groups
-    - Apps and Owners Can Change All Group Membership
+    - Apps and Owners Can Change All Group Membership (Work in Progress)
+    - Avoid standing access for user accounts and permissions (Work in Progress)
   - External Identities
     - Guest Invite Settings
-    - Guest User Access Restrictions
+    - Guest User Access Restrictions (Work in Progress)
   - User Setting
     - User role permissions (Application registration)
     - Authentication Methods
@@ -31,18 +32,23 @@ These are what is currently working.
     - Verified Domains
   - Enterprise Applications
     - User Consent for Apps
-    - Group Owner Consent
+    - Group Owner Consent (Work in Progress)
     - Application Owners
+    - Applications with privileged app role assignments (Work in Progress)
   - Conditional Access Policies
     - Block Legacy Protocols
     - Require MFA for Administrators
     - Require MFA for Azure Management
     - Restricted Locations
     - Require devices to be marked as compliant
+    - Protected Actions
   - Password Reset
-    - Self-service password reset policy requirement
-    - Re-confirm authentication information
-    - Number of methods required to reset password
+    - Self-service password reset policy requirement (Work in Progress)
+    - Re-confirm authentication information (Work in Progress)
+    - Number of methods required to reset password (Work in Progress)
+    - Privileged Administrator Role Assignments (Work in Progress)
+
+Check out the [Demo](#demo) section for some example videos.
 
 ## Prerequisites
 
@@ -58,15 +64,16 @@ These are what is currently working.
 choco install anaconda3
 # go drink a coffee - this takes a while
 ```
+
 We need to make sure a few prequisite modules are installed
 
 - Az (Azure Powershell)
 - Az.ResourceGraph
 - Microsoft.Graph
 
-Note that `Microsoft.Graph` is a collection of many modules. We just check one of them.
+Note that `Microsoft.Graph` is a collection of many modules.
 
-If there are multiple of the same modules listed then you have Microsoft.Graph modules installed in multiple places and possibly multiple different versions.
+If there are multiple of the same modules listed using below code, then you have Microsoft.Graph modules installed in multiple places and possibly multiple different versions.
 
 I would suggest completely uninstalling and then install the necessary modules. Also beware if you are installing to PowerShell Desktop or Core, check `$PSVersionTable`.
 
@@ -116,18 +123,16 @@ Install-Module Microsoft.PowerShell.ConsoleGuiTools
 Set-Alias -Name Out-GridView -Value Out-ConsoleGridview
 ```
 
-## Preview
+## Demo
 
 [Limit the number of Global Administrators to less than 5](/notebooks/media/Limit%20the%20number%20of%20Global%20Administrators%20to%20less%20than%205.mov)
 
 https://github.com/spaelling/azure-security-review/assets/871412/41c6ea70-57cd-44c9-b0a2-61d8e3107fed
 
-## Development
+[PIM Alerts](/notebooks/media/PIM%20alerts.mov)
 
-Figuring out how to gather the necessary data for a control or recommendation can sometimes be difficult. For Microsoft Graph I work with [Microsoft Graph REST API v1.0 endpoint reference](https://learn.microsoft.com/en-us/graph/api/overview?view=graph-rest-1.0) (and sometimes the beta API).
+[User consent for apps](/notebooks/media/user%20consent%20for%20apps.mov)
 
-It can sometimes help to use ex. the Azure portal and have the developer tools open. Filter for ex. `graph` to get an idea of how the portal works with the Graph API.
+[Application owners](/notebooks/media/application%20owners.mov)
 
-Use [Graph Explorer](https://developer.microsoft.com/en-us/graph/graph-explorer) to test. Both the explorer and endpoint reference documentation has code snippets.
-
-It is not always clear what permissions are required. Most of the time it is clearly stated. If possible work with only `read` permissions.
+[Block Legacy Protocols](/notebooks/media/block%20legacy%20protocols.mov)
