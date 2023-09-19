@@ -60,7 +60,15 @@ Update all MG modules using
 Get-Module -ListAvailable | Where-Object {$_.Name -like "*Microsoft.Graph.*"} | Update-Module -Force
 ```
 
-We will also be using a comminty module 
+Alternative is to use `MicrosoftGraphPS`
+
+```powershell
+Install-Module -Name MicrosoftGraphPS
+# and run
+Manage-Version-Microsoft.Graph -CleanupOldMicrosoftGraphVersions
+```
+
+We will also be using a community module:
 
 ```powershell
 Install-Module -Name AzResourceGraphPS
