@@ -154,4 +154,9 @@ https://github.com/spaelling/azure-security-review/assets/871412/69ff9d19-edc0-4
 
 [Subnets should have an NSG associated](/notebooks/media/Subnets%20should%20have%20an%20NSG%20associated.mov)
 
+https://github.com/spaelling/azure-security-review/assets/871412/e4261ba9-7f7b-4e3f-9d5c-2de49033a2b5
+
 [Open Management Ports](/notebooks/media/Open%20Management%20Ports.mov)
+
+https://github.com/spaelling/azure-security-review/assets/871412/036c614e-bfe1-4b32-a84c-a69d2f517c09
+
