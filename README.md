@@ -131,8 +131,16 @@ https://github.com/spaelling/azure-security-review/assets/871412/41c6ea70-57cd-4
 
 [PIM Alerts](/notebooks/media/PIM%20alerts.mov)
 
+https://github.com/spaelling/azure-security-review/assets/871412/12db37a9-18aa-4f7e-ad4a-9732f1959761
+
 [User consent for apps](/notebooks/media/user%20consent%20for%20apps.mov)
+
+https://github.com/spaelling/azure-security-review/assets/871412/f60e87de-98b5-4152-adf1-7e3962969853
 
 [Application owners](/notebooks/media/application%20owners.mov)
 
+https://github.com/spaelling/azure-security-review/assets/871412/cc9db762-f164-4945-8732-ff9e9193a350
+
 [Block Legacy Protocols](/notebooks/media/block%20legacy%20protocols.mov)
+
+https://github.com/spaelling/azure-security-review/assets/871412/69ff9d19-edc0-4b58-951d-a565da418ae3
