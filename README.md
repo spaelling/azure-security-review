@@ -120,6 +120,8 @@ Set-Alias -Name Out-GridView -Value Out-ConsoleGridview
 
 [Limit the number of Global Administrators to less than 5](/notebooks/media/Limit%20the%20number%20of%20Global%20Administrators%20to%20less%20than%205.mov)
 
+https://github.com/spaelling/azure-security-review/assets/871412/41c6ea70-57cd-44c9-b0a2-61d8e3107fed
+
 ## Development
 
 Figuring out how to gather the necessary data for a control or recommendation can sometimes be difficult. For Microsoft Graph I work with [Microsoft Graph REST API v1.0 endpoint reference](https://learn.microsoft.com/en-us/graph/api/overview?view=graph-rest-1.0) (and sometimes the beta API).
