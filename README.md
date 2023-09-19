@@ -47,6 +47,13 @@ These are what is currently working.
     - Re-confirm authentication information (Work in Progress)
     - Number of methods required to reset password (Work in Progress)
     - Privileged Administrator Role Assignments (Work in Progress)
+- Network
+  - Use HTTPS Only
+  - Set minimum TLS policy to 1.2
+  - Turn off remote debugging
+  - Subnets should have an NSG associated
+  - NSG Deny All Rule
+  - Open Management Ports
 
 Check out the [Demo](#demo) section for some example videos.
 
@@ -144,3 +151,7 @@ https://github.com/spaelling/azure-security-review/assets/871412/cc9db762-f164-4
 [Block Legacy Protocols](/notebooks/media/block%20legacy%20protocols.mov)
 
 https://github.com/spaelling/azure-security-review/assets/871412/69ff9d19-edc0-4b58-951d-a565da418ae3
+
+[Subnets should have an NSG associated](/notebooks/media/Subnets%20should%20have%20an%20NSG%20associated.mov)
+
+[Open Management Ports](/notebooks/media/Open%20Management%20Ports.mov)
