@@ -1,14 +1,48 @@
 # Azure Security Review
 
-An attempt to create a Jupyter Notebook (using Polyglot) to codify the [Azure Security Review Checklist](https://github.com/Azure/review-checklists) and other general security recommendations, like [Microsoft Security Benchmarks](https://learn.microsoft.com/en-us/security/benchmark/azure/overview).
-
-The goal is to include all the checklist items and controls to the extend that it is possibly to gain insights using code.
+A *notebook* (using Polyglot) that codifies the [Azure Security Review Checklist](https://github.com/Azure/review-checklists) and other general security recommendations, like [Microsoft Security Benchmarks](https://learn.microsoft.com/en-us/security/benchmark/azure/overview). At some point I will also include best practices and *well architected* recommendations.
 
 The notebook approach allows for use of many different languages and frameworks. We can use Microsoft Graph to gain insights into Entra ID (Azure AD), and we can use Azure Resource Graph combined with Azure Powershell or Az cli. But C#, Python, Javascript, etc. is also viable options.
 
-An example could be to use Resource Graph combined with Azure Powershell to to review Owner access, and then look at signin-logs for the Owner users.
+An example of what is *relatively easy* is to use Resource Graph combined with Azure Powershell to to review Owner access, and then look at signin-logs for the Owner users, and check for omissions of MFA.
 
-Combined with Markdown allows for verbosity to a level that an Excel sheet cannot do, and insights gained literally with the click of a button.
+Combined with Markdown allows for verbosity to a level that is hard to beat with any other tooling, and insights gained literally with the click of a button.
+
+## Notes
+
+These are what is currently working.
+
+- Identity [identity.ipynb](./notebooks/identity.ipynb)
+  - Privileged **administration
+    - Limit the number of Global Administrators to less than 5
+    - Synchronized accounts
+    - Use groups for Azure AD role assignments
+    - PIM Alerts
+    - Recurring access reviews
+    - Access Reviews: Enabled for all groups
+    - Apps and Owners Can Change All Group Membership
+  - External Identities
+    - Guest Invite Settings
+    - Guest User Access Restrictions
+  - User Setting
+    - User role permissions (Application registration)
+    - Authentication Methods
+  - Custom Domains
+    - Verified Domains
+  - Enterprise Applications
+    - User Consent for Apps
+    - Group Owner Consent
+    - Application Owners
+  - Conditional Access Policies
+    - Block Legacy Protocols
+    - Require MFA for Administrators
+    - Require MFA for Azure Management
+    - Restricted Locations
+    - Require devices to be marked as compliant
+  - Password Reset
+    - Self-service password reset policy requirement
+    - Re-confirm authentication information
+    - Number of methods required to reset password
 
 ## Prerequisites
 
@@ -84,7 +118,7 @@ Set-Alias -Name Out-GridView -Value Out-ConsoleGridview
 
 ## Preview
 
-![](notebooks/media/iam.gif)
+[Limit the number of Global Administrators to less than 5](/notebooks/media/Limit%20the%20number%20of%20Global%20Administrators%20to%20less%20than%205.mov)
 
 ## Development
 
