@@ -1,19 +1,17 @@
 # Azure Security Review
 
-A *notebook* (using Polyglot) that codifies the [Azure Security Review Checklist](https://github.com/Azure/review-checklists) and other general security recommendations, like [Microsoft Security Benchmarks](https://learn.microsoft.com/en-us/security/benchmark/azure/overview). At some point I will also include best practices and *well architected* recommendations.
+A *notebook* (using Polyglot) that codifies the [Azure Security Review Checklist](https://github.com/Azure/review-checklists) and other general security recommendations, like [Microsoft Security Benchmarks](https://learn.microsoft.com/en-us/security/benchmark/azure/overview). It will also include best practices and *well architected* recommendations.
 
 The notebook approach allows for use of many different languages and frameworks. We can use Microsoft Graph to gain insights into Entra ID (Azure AD), and we can use Azure Resource Graph combined with Azure Powershell or Az cli. But C#, Python, Javascript, etc. is also viable options.
 
-An example of what is *relatively easy* is to use Resource Graph combined with Azure Powershell to to review Owner access, and then look at signin-logs for the Owner users, and check for omissions of MFA.
-
-Combined with Markdown allows for verbosity to a level that is hard to beat with any other tooling, and insights gained literally with the click of a button.
+Combined with Markdown, this allows for verbosity to a level that is hard to beat with any other tooling, and insights gained literally with the click of a button.
 
 ## Notes
 
-These are what is currently working.
+These are the controls/checks that are implemented, planned, or work in progress.
 
-- Identity [identity.ipynb](./notebooks/identity.ipynb)
-  - Privileged **administration
+- Entra ID (Azure AD) [identity.ipynb](./notebooks/identity.ipynb)
+  - Privileged administration
     - Limit the number of Global Administrators to less than 5
     - Synchronized accounts
     - Use groups for Azure AD role assignments (Work in Progress)
@@ -47,15 +45,17 @@ These are what is currently working.
     - Re-confirm authentication information (Work in Progress)
     - Number of methods required to reset password (Work in Progress)
     - Privileged Administrator Role Assignments (Work in Progress)
-- Network
-  - Use HTTPS Only
-  - Set minimum TLS policy to 1.2
-  - Turn off remote debugging
-  - Subnets should have an NSG associated
-  - NSG Deny All Rule
-  - Open Management Ports
+- Azure Infrastructure
+  - Network [network.ipynb](./notebooks/network.ipynb)
+    - Subnets should have an NSG associated
+    - NSG Deny All Rule
+    - Open Management Ports
+  - App Services [app_services.ipynb](./notebooks/app_services.ipynb)
+    - Use HTTPS Only
+    - Set minimum TLS policy to 1.2
+    - Turn off remote debugging
 
-Check out the [Demo](#demo) section for some example videos.
+Check out the [Demo](#demo) section for examples.
 
 ## Prerequisites
 
@@ -129,6 +129,10 @@ Install-Module Microsoft.PowerShell.ConsoleGuiTools
 # And set the alias - note this is just for the session.
 Set-Alias -Name Out-GridView -Value Out-ConsoleGridview
 ```
+
+## Azure Policies
+
+This notebook is not a replacement for Azure Policies. Many of the checks done here is much better to do using Azure Policies (if possible), as these continously evaluate, and can also enforce specific settings.
 
 ## Demo
 
