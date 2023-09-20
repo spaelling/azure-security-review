@@ -150,7 +150,7 @@ https://github.com/spaelling/azure-security-review/assets/871412/12db37a9-18aa-4
 
 [User consent for apps](/notebooks/media/user%20consent%20for%20apps.mov)
 
-https://github.com/spaelling/azure-security-review/assets/871412/f60e87de-98b5-4152-adf1-7e3962969853
+https://github.com/spaelling/azure-security-review/assets/871412/6433875c-df6c-4d66-9086-daf0a3b7607f
 
 [Application owners](/notebooks/media/application%20owners.mov)
 
