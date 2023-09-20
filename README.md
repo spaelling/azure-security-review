@@ -44,16 +44,18 @@ These are the controls/checks that are implemented, planned, or work in progress
     - Self-service password reset policy requirement (Work in Progress)
     - Re-confirm authentication information (Work in Progress)
     - Number of methods required to reset password (Work in Progress)
-    - Privileged Administrator Role Assignments (Work in Progress)
 - Azure Infrastructure
   - Network [network.ipynb](./notebooks/network.ipynb)
     - Subnets should have an NSG associated
     - NSG Deny All Rule
     - Open Management Ports
+    - NSG Flow Logs
   - App Services [app_services.ipynb](./notebooks/app_services.ipynb)
     - Use HTTPS Only
     - Set minimum TLS policy to 1.2
     - Turn off remote debugging
+  - Role Based Access Control (RBAC)
+    - Privileged Administrator Role Assignments (planned)
 
 Check out the [Demo](#demo) section for examples.
 
