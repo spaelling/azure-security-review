@@ -212,3 +212,28 @@ function Get-PrivilegedAdministratorRoleAssignments {
     
     Get-PrivilegedUsers -Role 'User Access Administrator' @GetPrivilegedUsersParams
 }
+
+
+
+function Measure-IpAddressCount {
+    [CmdletBinding()]
+    param (
+        $StartIpAddress,
+        $EndIpAddress
+    )
+    $Ip_Adresa_Od = $StartIpAddress -split "\."
+    $Ip_Adresa_Do = $EndIpAddress -split "\."
+    
+    #change endianness
+    [array]::Reverse($Ip_Adresa_Od)
+    [array]::Reverse($Ip_Adresa_Do)
+    
+    #convert octets to integer
+    $start = [bitconverter]::ToUInt32([byte[]]$Ip_Adresa_Od, 0)
+    $end = [bitconverter]::ToUInt32([byte[]]$Ip_Adresa_Do, 0)
+    
+    # if they are the same, return 1
+    return [System.Math]::Max($end - $start, 1)
+}
+# Measure-IpAddressCount -StartIpAddress '192.168.1.0' -EndIpAddress '192.168.2.0'
+# Measure-IpAddressCount -StartIpAddress '0.0.0.0' -EndIpAddress '255.255.255.255'
