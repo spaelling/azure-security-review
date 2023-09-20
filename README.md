@@ -50,6 +50,8 @@ These are the controls/checks that are implemented, planned, or work in progress
     - NSG Deny All Rule
     - Open Management Ports
     - NSG Flow Logs
+    - Network ACLs
+    - Azure SQL Network ACLs
   - App Services [app_services.ipynb](./notebooks/app_services.ipynb)
     - Use HTTPS Only
     - Set minimum TLS policy to 1.2
