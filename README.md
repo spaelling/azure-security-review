@@ -40,6 +40,7 @@ These are the controls/checks that are implemented, planned, or work in progress
     - Restricted Locations
     - Require devices to be marked as compliant
     - Protected Actions
+    - Break Glass/Emergency Accounts (Work in Progress)
   - Password Reset
     - Self-service password reset policy requirement (Work in Progress)
     - Re-confirm authentication information (Work in Progress)
@@ -167,4 +168,6 @@ https://github.com/spaelling/azure-security-review/assets/871412/e4261ba9-7f7b-4
 [Open Management Ports](/notebooks/media/Open%20Management%20Ports.mov)
 
 https://github.com/spaelling/azure-security-review/assets/871412/036c614e-bfe1-4b32-a84c-a69d2f517c09
+
+## Feedback
 
