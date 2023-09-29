@@ -322,3 +322,71 @@ Function ConvertTo-Markdown {
     }
 }
 
+## how to use main.iam.ad.ext.azure.com
+
+## https://rozemuller.com/use-internal-azure-api-in-automation/
+
+$clientId = "1950a258-227b-4e31-a9cf-717495945fc2" # This is de Microsoft Azure Powershell application
+$tenantId = $TenantId 
+$resource = "https://main.iam.ad.ext.azure.com/"
+
+# Send the request to receive a device authentication URL
+$codeRequest = Invoke-RestMethod -Method POST -UseBasicParsing -Uri "https://login.microsoftonline.com/$tenantId/oauth2/devicecode" -Body "resource=$resource&client_id=$clientId"
+Write-Output "`n$($codeRequest.message)"
+
+# Create the body for the token request, where the device code from the previous request will be used in the call
+$tokenBody = @{
+    grant_type = "urn:ietf:params:oauth:grant-type:device_code"
+    code       = $codeRequest.device_code
+    client_id  = $clientId
+}
+  
+# Get OAuth Token
+while ([string]::IsNullOrEmpty($tokenRequest.access_token)) {
+    $tokenRequest = try {
+        Invoke-RestMethod -Method POST -Uri "https://login.microsoftonline.com/$tenantId/oauth2/token" -Body $tokenBody
+    }
+    catch {
+        $errorMessage = $_.ErrorDetails.Message | ConvertFrom-Json
+        # If not waiting for auth, throw error
+        if ($errorMessage.error -ne "authorization_pending") {
+            throw "Authorization is pending."
+        }
+    }
+}
+  
+# Printing the relevant information for tracability of the token and code
+Write-Output $($tokenRequest | Select-Object -Property token_type, scope, resource, access_token, refresh_token, id_token)
+$refreshToken = $tokenRequest.refresh_token
+
+$response = (Invoke-RestMethod "https://login.windows.net/$tenantId/oauth2/token" -Method POST -Body "resource=74658136-14ec-4630-ad9b-26e160ff0fc6&grant_type=refresh_token&refresh_token=$refreshToken&client_id=$clientId&scope=openid" -ErrorAction Stop)
+$resourceToken = $response.access_token
+
+#######
+$appId = ''
+# start and end is in Unix time
+$Date = Get-Date
+$end = [int](Get-Date $Date -UFormat %s) * 1000
+$Date = $Date.AddDays(-30) # does not look like we can go further back than 30 days here
+$start = [int](Get-Date $Date -UFormat %s) * 1000
+
+# Microsoft Graph PowerShell | Usage & insights
+$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$Uri = "https://main.iam.ad.ext.azure.com/api/ApplicationInsights/EnterpriseAppSignIns?appId=$appId&start=$Start&end=$End"
+$Headers = @{
+    "x-ms-client-session-id" = [GUID]::NewGuid().Guid
+    "x-ms-client-request-id" = [GUID]::NewGuid().Guid
+    "x-ms-command-name"      = "ApplicationManagement - GetEnterpriseAppSignInInsights"
+    "Accept-Language"        = "en"
+    "Authorization"          = "Bearer $resourceToken"
+    "x-ms-effective-locale"  = "en.en-gb"
+    "Accept"                 = "*/*"
+}
+$Response = Invoke-WebRequest -UseBasicParsing -Uri $Uri -WebSession $session -Headers $Headers -ContentType "application/json"
+$response.Content | Convertfrom-Json
+
+<# looks like we get back data for each day
+for errorNo 0 the activityCount is the number of signins in the last x days
+
+if erroNo is not 0 then it lists signin failures and a reason
+#>
