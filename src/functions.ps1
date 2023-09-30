@@ -322,48 +322,68 @@ Function ConvertTo-Markdown {
     }
 }
 
-## how to use main.iam.ad.ext.azure.com
-
+## get token for main.iam.ad.ext.azure.com
 ## https://rozemuller.com/use-internal-azure-api-in-automation/
+function Get-DeviceCodeAuthenticationToken {
+    [CmdletBinding()]
+    param (
+        $tenantId
+    )
 
-$clientId = "1950a258-227b-4e31-a9cf-717495945fc2" # This is de Microsoft Azure Powershell application
-$tenantId = $TenantId 
-$resource = "https://main.iam.ad.ext.azure.com/"
-
-# Send the request to receive a device authentication URL
-$codeRequest = Invoke-RestMethod -Method POST -UseBasicParsing -Uri "https://login.microsoftonline.com/$tenantId/oauth2/devicecode" -Body "resource=$resource&client_id=$clientId"
-Write-Output "`n$($codeRequest.message)"
-
-# Create the body for the token request, where the device code from the previous request will be used in the call
-$tokenBody = @{
-    grant_type = "urn:ietf:params:oauth:grant-type:device_code"
-    code       = $codeRequest.device_code
-    client_id  = $clientId
-}
-  
-# Get OAuth Token
-while ([string]::IsNullOrEmpty($tokenRequest.access_token)) {
-    $tokenRequest = try {
-        Invoke-RestMethod -Method POST -Uri "https://login.microsoftonline.com/$tenantId/oauth2/token" -Body $tokenBody
+    $clientId = "1950a258-227b-4e31-a9cf-717495945fc2" # This is de Microsoft Azure Powershell application
+    $resource = "https://main.iam.ad.ext.azure.com/"
+    $tokenRequest = $null
+    
+    # Send the request to receive a device authentication URL
+    $codeRequest = Invoke-RestMethod -Method POST -UseBasicParsing -Uri "https://login.microsoftonline.com/$tenantId/oauth2/devicecode" -Body "resource=$resource&client_id=$clientId" -Verbose:$false
+    Write-Host "`n$($codeRequest.message)"
+    Read-Host "Press enter to continue"
+    
+    # Create the body for the token request, where the device code from the previous request will be used in the call
+    $tokenBody = @{
+        grant_type = "urn:ietf:params:oauth:grant-type:device_code"
+        code       = $codeRequest.device_code
+        client_id  = $clientId
     }
-    catch {
-        $errorMessage = $_.ErrorDetails.Message | ConvertFrom-Json
-        # If not waiting for auth, throw error
-        if ($errorMessage.error -ne "authorization_pending") {
-            throw "Authorization is pending."
+      
+    # Get OAuth Token
+    while ([string]::IsNullOrEmpty($tokenRequest.access_token)) {
+        # Write-Verbose "`$tokenRequest is empty"
+        $tokenRequest = try {
+            Invoke-RestMethod -Method POST -Uri "https://login.microsoftonline.com/$tenantId/oauth2/token" -Body $tokenBody -Verbose:$false -ErrorAction Stop
+        }
+        catch {
+            $errorMessage = $_.ErrorDetails.Message | ConvertFrom-Json
+            Write-Verbose $errorMessage
+            # If not waiting for auth, throw error
+            if ($errorMessage.error -ne "authorization_pending") {
+                throw "Authorization is pending."
+            }
+            else {
+                Write-Host "Waiting for device code authentication..."
+                Start-Sleep -Seconds 10
+            }
         }
     }
+      
+    # Printing the relevant information for tracability of the token and code
+    # Write-Output $($tokenRequest | Select-Object -Property token_type, scope, resource, access_token, refresh_token, id_token)
+    $refreshToken = $tokenRequest.refresh_token
+    
+    try {
+        $response = (Invoke-RestMethod "https://login.windows.net/$tenantId/oauth2/token" -Method POST -Body "resource=74658136-14ec-4630-ad9b-26e160ff0fc6&grant_type=refresh_token&refresh_token=$refreshToken&client_id=$clientId&scope=openid" -ErrorAction Stop -Verbose:$false)
+    }
+    catch {
+        throw $_
+    }
+    $response.access_token
 }
-  
-# Printing the relevant information for tracability of the token and code
-Write-Output $($tokenRequest | Select-Object -Property token_type, scope, resource, access_token, refresh_token, id_token)
-$refreshToken = $tokenRequest.refresh_token
+<#  https://microsoft.com/devicelogin  #>
+$Token = if ([string]::IsNullOrEmpty($Token)) { Get-DeviceCodeAuthenticationToken -tenantId '690e25b4-8c5e-4a10-a32e-523da88a4c99' -Verbose } else { $Token }
 
-$response = (Invoke-RestMethod "https://login.windows.net/$tenantId/oauth2/token" -Method POST -Body "resource=74658136-14ec-4630-ad9b-26e160ff0fc6&grant_type=refresh_token&refresh_token=$refreshToken&client_id=$clientId&scope=openid" -ErrorAction Stop)
-$resourceToken = $response.access_token
 
 #######
-$appId = ''
+$appId = '9cdead84-a844-4324-93f2-b2e6bb768d07'
 # start and end is in Unix time
 $Date = Get-Date
 $end = [int](Get-Date $Date -UFormat %s) * 1000
@@ -378,7 +398,7 @@ $Headers = @{
     "x-ms-client-request-id" = [GUID]::NewGuid().Guid
     "x-ms-command-name"      = "ApplicationManagement - GetEnterpriseAppSignInInsights"
     "Accept-Language"        = "en"
-    "Authorization"          = "Bearer $resourceToken"
+    "Authorization"          = "Bearer $Token"
     "x-ms-effective-locale"  = "en.en-gb"
     "Accept"                 = "*/*"
 }
