@@ -32,7 +32,7 @@ These are the controls/checks that are implemented, planned, or work in progress
     - User Consent for Apps
     - Group Owner Consent (Work in Progress)
     - Application Owners
-    - Applications with privileged app role assignments (Work in Progress)
+    - Applications with privileged app role assignments
   - Conditional Access Policies
     - Block Legacy Protocols
     - Require MFA for Administrators
@@ -93,7 +93,7 @@ I would suggest completely uninstalling and then install the necessary modules. 
 $MGModuleNames = 'Microsoft.Graph.Identity.DirectoryManagement', 'Microsoft.Graph.Authentication', 'Microsoft.Graph.Identity.SignIns', 'Microsoft.Graph.Groups', 'Microsoft.Graph.DirectoryObjects', 'Microsoft.Graph.Users', 'Microsoft.Graph.Applications'
 $MGModuleNames | % {Install-Module -Name $_ -Scope AllUsers -Force -Verbose}
 # beta modules
-$MGModuleNames = 'Microsoft.Graph.Beta.Identity.SignIns', 'Microsoft.Graph.Beta.Identity.Governance', 'Microsoft.Graph.Beta.Applications', 'Microsoft.Graph.Beta.Identity.DirectoryManagement', 'Microsoft.Graph.Beta.DirectoryObjects'
+$MGModuleNames = 'Microsoft.Graph.Beta.Identity.SignIns', 'Microsoft.Graph.Beta.Identity.Governance', 'Microsoft.Graph.Beta.Applications', 'Microsoft.Graph.Beta.Identity.DirectoryManagement', 'Microsoft.Graph.Beta.DirectoryObjects', 'Microsoft.Graph.Beta.Reports'
 $MGModuleNames | % {Install-Module -Name $_ -Scope AllUsers -Force -Verbose -AllowClobber}
 ```
 
