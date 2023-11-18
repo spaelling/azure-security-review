@@ -11,6 +11,9 @@ Combined with Markdown, this allows for verbosity to a level that is hard to bea
 These are the controls/checks that are implemented, planned, or work in progress.
 
 - Entra ID (Azure AD) [identity.ipynb](./notebooks/identity.ipynb)
+  - Users
+    - User States
+    - Disabled Users
   - Privileged administration
     - Limit the number of Global Administrators to less than 5
     - Synchronized accounts
@@ -170,4 +173,3 @@ https://github.com/spaelling/azure-security-review/assets/871412/e4261ba9-7f7b-4
 https://github.com/spaelling/azure-security-review/assets/871412/036c614e-bfe1-4b32-a84c-a69d2f517c09
 
 ## Feedback
-
