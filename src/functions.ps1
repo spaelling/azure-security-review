@@ -246,6 +246,7 @@ function Measure-IpAddressCount {
 # Measure-IpAddressCount -StartIpAddress '0.0.0.0' -EndIpAddress '255.255.255.255'
 
 # from https://www.powershellgallery.com/packages/PSMarkdown/1.1
+# NOTE: the ordered of properties is ignored in the Polyglot notebook output. Works fine in normal powershell
 <#
 .Synopsis
    Converts a PowerShell object to a Markdown table.
@@ -278,7 +279,7 @@ Function ConvertTo-Markdown {
 
     Begin {
         $items = @()
-        $columns = @{}
+        $columns = [ordered]@{}
     }
 
     Process {
@@ -286,8 +287,8 @@ Function ConvertTo-Markdown {
             $items += $item
 
             $item.PSObject.Properties | % {
-                if ($_.Value -ne $null) {
-                    if (-not $columns.ContainsKey($_.Name) -or $columns[$_.Name] -lt $_.Value.ToString().Length) {
+                if ($null -ne $_.Value) {
+                    if (-not $columns.Contains($_.Name) -or $columns[$_.Name] -lt $_.Value.ToString().Length) {
                         $columns[$_.Name] = $_.Value.ToString().Length
                     }
                 }
@@ -321,7 +322,6 @@ Function ConvertTo-Markdown {
         }
     }
 }
-
 ## get token for main.iam.ad.ext.azure.com
 ## https://rozemuller.com/use-internal-azure-api-in-automation/
 function Get-DeviceCodeAuthenticationToken {
