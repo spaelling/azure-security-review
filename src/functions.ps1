@@ -246,7 +246,6 @@ function Measure-IpAddressCount {
 # Measure-IpAddressCount -StartIpAddress '0.0.0.0' -EndIpAddress '255.255.255.255'
 
 # from https://www.powershellgallery.com/packages/PSMarkdown/1.1
-# NOTE: the ordered of properties is ignored in the Polyglot notebook output. Works fine in normal powershell
 <#
 .Synopsis
    Converts a PowerShell object to a Markdown table.
