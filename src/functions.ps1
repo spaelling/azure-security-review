@@ -278,7 +278,7 @@ Function ConvertTo-Markdown {
 
     Begin {
         $items = @()
-        $columns = @{}
+        $columns = [ordered]@{}
     }
 
     Process {
@@ -286,8 +286,8 @@ Function ConvertTo-Markdown {
             $items += $item
 
             $item.PSObject.Properties | % {
-                if ($_.Value -ne $null) {
-                    if (-not $columns.ContainsKey($_.Name) -or $columns[$_.Name] -lt $_.Value.ToString().Length) {
+                if ($null -ne $_.Value) {
+                    if (-not $columns.Contains($_.Name) -or $columns[$_.Name] -lt $_.Value.ToString().Length) {
                         $columns[$_.Name] = $_.Value.ToString().Length
                     }
                 }
@@ -321,7 +321,6 @@ Function ConvertTo-Markdown {
         }
     }
 }
-
 ## get token for main.iam.ad.ext.azure.com
 ## https://rozemuller.com/use-internal-azure-api-in-automation/
 function Get-DeviceCodeAuthenticationToken {
