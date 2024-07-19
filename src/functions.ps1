@@ -254,6 +254,7 @@ function Measure-IpAddressCount {
 #endregion
 
 #region ConvertTo-Markdown
+# NOTE: this has trouble with properties that are null or empty strings. It will mess with the order of the columns
 # from https://www.powershellgallery.com/packages/PSMarkdown/1.1
 <#
 .Synopsis
@@ -564,7 +565,8 @@ function Get-EntraIdPrivilegedAppRoleAssignments {
         }
 
         # Create reporting object
-        [PSCustomObject]@{
+        [PSCustomObject][Ordered]@{
+            AppRoleTier                                     = $appRoleTiers["$($currentAppRole.Value)"]
             ServicePrincipalDisplayName                     = $currentServicePrincipalObject.DisplayName
             ServicePrincipalId                              = $currentServicePrincipalObject.Id
             ServicePrincipalType                            = $currentServicePrincipalObject.ServicePrincipalType
@@ -576,7 +578,6 @@ function Get-EntraIdPrivilegedAppRoleAssignments {
             AppOwnerOrganizationTenantDomain                = $currentAppOwnerOrgObject.DefaultDomainName
             Resource                                        = $currentAppRoleAssignedTo.ResourceDisplayName
             AppRole                                         = $currentAppRole.Value
-            AppRoleTier                                     = $appRoleTiers["$($currentAppRole.Value)"]
             AppRoleAssignedDate                             = $(if ($currentAppRoleAssignedTo.CreatedDateTime) { (Get-Date $currentAppRoleAssignedTo.CreatedDateTime -Format 'yyyy-MM-dd') })
             AppRoleName                                     = $currentAppRole.DisplayName
             AppRoleDescription                              = $currentAppRole.Description
