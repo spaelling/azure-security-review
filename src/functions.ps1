@@ -1,3 +1,4 @@
+#region Invoke-AzResourceGraphCheck
 function Invoke-AzResourceGraphCheck {
     [CmdletBinding()]
     param (
@@ -13,7 +14,9 @@ function Invoke-AzResourceGraphCheck {
     
     Search-AzGraph $Query | Select-Object -ExpandProperty Data | Where-Object { $_.compliant -eq 0 } | Select-Object -ExpandProperty id    
 }
+#endregion
 
+#region Get-GroupMembers
 function Get-GroupMembers {
     [CmdletBinding()]
     param (
@@ -44,7 +47,9 @@ function Get-GroupMembers {
         }
     }  
 }
+#endregion
 
+#region Get-EntraIdRoleAssignment
 function Get-EntraIdRoleAssignment {
     [CmdletBinding()]
     param (
@@ -81,7 +86,9 @@ function Get-EntraIdRoleAssignment {
     # sort unique to remove duplicates (eligble and assigned)
     $Assigned + $Eligeble | Sort-Object -Unique -Property Id
 }
+#endregion
 
+#region Get-PrivilegedAdministratorRoleAssignments
 function Get-PrivilegedAdministratorRoleAssignments {
     [CmdletBinding()]
     param (
@@ -219,9 +226,9 @@ function Get-PrivilegedAdministratorRoleAssignments {
     
     Get-PrivilegedUsers -Role 'User Access Administrator' @GetPrivilegedUsersParams
 }
+#endregion
 
-
-
+#region Measure-IpAddressCount
 function Measure-IpAddressCount {
     [CmdletBinding()]
     param (
@@ -244,7 +251,9 @@ function Measure-IpAddressCount {
 }
 # Measure-IpAddressCount -StartIpAddress '192.168.1.0' -EndIpAddress '192.168.2.0'
 # Measure-IpAddressCount -StartIpAddress '0.0.0.0' -EndIpAddress '255.255.255.255'
+#endregion
 
+#region ConvertTo-Markdown
 # from https://www.powershellgallery.com/packages/PSMarkdown/1.1
 <#
 .Synopsis
@@ -321,6 +330,9 @@ Function ConvertTo-Markdown {
         }
     }
 }
+#endregion
+
+#region Get-DeviceCodeAuthenticationToken
 ## get token for main.iam.ad.ext.azure.com
 ## https://rozemuller.com/use-internal-azure-api-in-automation/
 function Get-DeviceCodeAuthenticationToken {
@@ -328,6 +340,12 @@ function Get-DeviceCodeAuthenticationToken {
     param (
         $tenantId
     )
+
+    #NOTE: we may be able to just use Get-AzAccessToken -Resource "https://main.iam.ad.ext.azure.com/"
+
+    <# Stopped using this API?
+    AADSTS500011: The resource principal named https://main.iam.ad.ext.azure.com/ was not found in the tenant named <TENANT>. This can happen if the application has not been installed by the administrator of the tenant or consented to by any user in the tenant. You might have sent your authentication request to the wrong tenant.
+    #>
 
     $clientId = "1950a258-227b-4e31-a9cf-717495945fc2" # This is de Microsoft Azure Powershell application
     $resource = "https://main.iam.ad.ext.azure.com/"
@@ -377,7 +395,9 @@ function Get-DeviceCodeAuthenticationToken {
     }
     $response.access_token
 }
+#endregion
 
+#region Get-EntraIDApplicationInsights
 function Get-EntraIDApplicationInsights {
     [CmdletBinding()]
     param (
@@ -412,7 +432,9 @@ for errorNo 0 the activityCount is the number of signins in the last x days
 if erroNo is not 0 then it lists signin failures and a reason
 #>
 }
+#endregion
 
+#region Get-EntraIdPrivilegedAppRoleAssignments
 ############################################################################################################
 #                                                                                                          #
 #  Powershell script showcasing how to fetch and report on all app role assignments for Microsoft Graph    #
@@ -568,3 +590,4 @@ function Get-EntraIdPrivilegedAppRoleAssignments {
 
     $msGraphAppRoleAssignedToReport
 }
+#endregion
