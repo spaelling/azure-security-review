@@ -818,9 +818,12 @@ function Get-PrivilegedAppRoleAssignments {
 #region Test-ConditionalAccessPolicy
 function Test-ConditionalAccessPolicy {
     param (
+        [switch]$OutputMarkdown,
         [parameter(ParameterSetName = "BlockLegacyProtocols")][switch]$BlockLegacyProtocols,
         [parameter(ParameterSetName = "MfaAdministrators")][switch]$MfaAdministrators,
-        [parameter(ParameterSetName = "MfaAzureManagement")][switch]$MfaAzureManagement
+        [parameter(ParameterSetName = "MfaAzureManagement")][switch]$MfaAzureManagement,
+        [parameter(ParameterSetName = "RestrictedLocations")][switch]$RestrictedLocations,
+        [parameter(ParameterSetName = "DeviceCompliance")][switch]$DeviceCompliance
     )
 
     $CompliantText = ''
@@ -903,6 +906,46 @@ function Test-ConditionalAccessPolicy {
         $CompliantText = 'CA Policy found that requires MFA or better to use "Microsoft Azure Management"'
     }
 
+    ## RESTRICTED LOCATIONS ##
+    if ($RestrictedLocations.IsPresent) {
+        # check if any named locations exist
+        $NamedLocation = Get-MgBetaIdentityConditionalAccessNamedLocation
+
+        $Compliant = $null -ne $NamedLocation -and $NamedLocation.Count -gt 0
+        $CompliantText = "$($NamedLocation.Count) Named Locations are defined"
+        $NonCompliantText = 'No Named Locations are defined'
+
+        # we can look for policies that excludes locations under conditions but exclude those that block access
+        $Filter = "state eq 'enabled' and conditions/locations/excludeLocations/all(i:i ne null) and grantControls/builtInControls/all(i:i ne 'block')"
+        # need to use the beta API as v1.0 does not include policies made from templates
+        $PoliciesLocationExclusion = Get-MgBetaIdentityConditionalAccessPolicy -Filter $Filter
+
+        if ($PoliciesLocationExclusion.Count -gt 0) {
+            Write-Warning "$($PoliciesLocationExclusion.Count) policies has location exclusions:"
+            $Output = $PoliciesLocationExclusion | Select-Object -Property DisplayName, Id
+        }
+    }
+
+    ## DEVICE COMPLIANCE ##
+    if ($DeviceCompliance.IsPresent) {
+        # we are looking for a policy that is enabled, the control is require device to be marked as compliant
+        $Filter = "state eq 'enabled' and grantControls/builtInControls/`$count gt 0 and grantControls/builtInControls/all(i:i eq 'compliantDevice')"
+        # need to use the beta API as v1.0 does not include policies made from templates
+        $CompliantDevicePolicy = Get-MgBetaIdentityConditionalAccessPolicy -Filter $Filter
+
+        # $CompliantDevicePolicy | Select-Object -Property DisplayName, Id
+
+        $ExcludeUsers = $CompliantDevicePolicy.Conditions.Users.ExcludeUsers
+        $ExcludeGroups = $CompliantDevicePolicy.Conditions.Users.ExcludeGroups
+        $ExcludeGuestsOrExternalUsers = $CompliantDevicePolicy.Conditions.Users.ExcludeGuestsOrExternalUsers
+
+        # TODO:
+        # $ExcludeGroups
+        # $ExcludeGuestsOrExternalUsers
+
+        $Compliant = $null -ne $CompliantDevicePolicy -and $CompliantDevicePolicy.Count -gt 0
+        $CompliantText = "CA Policy found that requires devices to be marked as compliant:`n$($CompliantDevicePolicy.DisplayName -join ',')"
+    }
     if ($Compliant) {
         Write-Host "Compliant to control; $CompliantText" -ForegroundColor Green
         # only makes sense to show if the policy is compliant
@@ -914,6 +957,49 @@ function Test-ConditionalAccessPolicy {
     else {
         Write-Host "Not compliant to control; $NonCompliantText" -ForegroundColor Red
     }
+    if ($OutputMarkdown.IsPresent) { $Output | ConvertTo-Markdown } else { $Output | Format-Table -AutoSize }
+}
+#endregion
+
+#region Test-ProtectedActions
+function Test-ProtectedActions {
+    [CmdletBinding()]
+    param (
+        [switch]$ShowExplanation
+    )
+    $Explanation = @"
+
+"@
+    if ($ShowExplanation.IsPresent) {
+        Write-Host $Explanation
+    }
+
+    # look for protected actions with an authentication context
+    # Get-MgBetaRoleManagementDirectoryResourceNamespaceResourceAction seems broken. what is UnifiedRbacResourceNamespaceId
+    $Response = Invoke-MgGraphRequest -Method GET "https://graph.microsoft.com/beta/roleManagement/directory/resourceNamespaces/microsoft.directory/resourceActions?`$filter=isAuthenticationContextSettable eq true and authenticationContextId ne null&`$select=id,name,description,actionVerb,isEnabledForCustomRole,isAuthenticationContextSettable,authenticationContextId&`$top=500" -ErrorAction Stop
+    # first we check if any protected actions are defined at all
+    $ProtectedActions = $Response.value
+    if ($ProtectedActions.Count -eq 0) {
+        Write-Warning "No protected actions defined"
+        return
+    }
+    # get all possible protected actions
+    $Response = Invoke-MgGraphRequest -Method GET "https://graph.microsoft.com/beta/roleManagement/directory/resourceNamespaces/microsoft.directory/resourceActions?`$filter=isAuthenticationContextSettable eq true&`$select=id" -ErrorAction Stop
+    Write-Host "$($ProtectedActions.Count) of $($Response.value.Count) protected actions are associated with an authentication context"
+
+    $authenticationContextIds = ($ProtectedActions | Select-Object -ExpandProperty authenticationContextId) | Sort-Object -Unique
+    # next we find if these are in use in any CA Policy
+    $FilterArray = ($authenticationContextIds | ForEach-Object { "'$_'" }) -join ','
+    $Filter = "state eq 'enabled' and grantControls/builtInControls/`$count gt 0 and conditions/applications/includeAuthenticationContextClassReferences/`$count gt 0 and conditions/applications/includeAuthenticationContextClassReferences/all(i:i in ($FilterArray))" 
+    # need to use the beta API as v1.0 does not include policies made from templates
+    $CompliantDevicePolicy = Get-MgBetaIdentityConditionalAccessPolicy -Filter $Filter
+    if ($CompliantDevicePolicy.Count -eq 0) {
+        Write-Warning "No CA policy uses the authentication context associated with a protected action"
+    }
+    else {
+        # TODO: specify which action is protected by which policy. Most likely that they are all protected by a single policy, so not that important.
+        Write-Host "Protected actions: $(($ProtectedActions | Select-Object -ExpandProperty description) -join ',') are protected by CA policies: $(($CompliantDevicePolicy | Select-Object -ExpandProperty DisplayName) -join ',')"
+    }    
 }
 #endregion
 
