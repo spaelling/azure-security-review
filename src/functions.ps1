@@ -1,3 +1,6 @@
+
+. "$PSScriptRoot\identity.ps1"
+
 #region Invoke-AzResourceGraphCheck
 function Invoke-AzResourceGraphCheck {
     [CmdletBinding()]
