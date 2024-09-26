@@ -478,6 +478,445 @@ Users should only be allowed to consent to apps from verified publishers or not 
 }
 #endregion
 
+#region Test-GroupOwnerConsent
+function Test-GroupOwnerConsent {
+    [CmdletBinding()]
+    param (
+        [switch]$OutputToHost,
+        [switch]$ShowExplanation
+    )
+    $Explanation = @"
+TODO
+"@
+    if ($ShowExplanation.IsPresent) {
+        Write-Host $Explanation
+    }
+    # TODO https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent-groups?tabs=azure-portal&pivots=ms-powershell
+}
+#endregion
+
+#region Find-OwnersFirstPartyMicrosoftApplications
+function Find-OwnersFirstPartyMicrosoftApplications {
+    [CmdletBinding()]
+    param (
+        [switch]$OutputToHost,
+        [switch]$ShowExplanation
+    )
+    $Explanation = @"
+Owners of builtin applications can be exploited, see https://dirkjanm.io/azure-ad-privilege-escalation-application-admin/
+"@
+    if ($ShowExplanation.IsPresent) {
+        Write-Host $Explanation
+    }
+    Get-MgBetaServicePrincipal -all -ExpandProperty owners | `
+        # looking for first-party Microsoft applications with owners
+        # TODO: convert to filter
+    Where-Object { $_.PublisherName -like "*Microsoft*" -or !($_.PublisherName -eq "Microsoft Accounts") -and $_.AppOwnerOrganizationId -eq 'f8cdef31-a31e-4b4a-93e4-5f571e91255a' } | `
+        Where-Object { $_.owners -like "*" } | Select-Object appid, displayname, PublisherName, owners # TODO: look up owner
+
+    # TODO: can we look for anyone who persisted access through one of these? 
+}
+#endregion
+
+#region Find-ApplicationsWithApplicationPermissionsAndOwner
+function Find-ApplicationsWithApplicationPermissionsAndOwner {
+    [CmdletBinding()]
+    param (
+        [switch]$OutputMarkdown,
+        [switch]$ShowExplanation
+    )
+    $Explanation = @"
+
+"@
+    if ($ShowExplanation.IsPresent) {
+        Write-Host $Explanation
+    }
+
+    $MgGraphPermissionIds = Find-MgGraphPermission -All -PermissionType Application | Select-Object -ExpandProperty Id
+    $Applications = Get-MgBetaApplication -All -ExpandProperty Owners | Where-Object {
+        $RequiredResourceAccess = $_.RequiredResourceAccess
+        $ResourceAppId = $RequiredResourceAccess.ResourceAppId
+        $ResourceAccessIds = $RequiredResourceAccess.ResourceAccess.Id
+        $ResourceAppId -eq '00000003-0000-0000-c000-000000000000' -and $_.Owners.Count -gt 0 -and ($ResourceAccessIds | Where-Object { $_ -In $MgGraphPermissionIds }).Count -gt 0
+    }
+    
+    if ($Applications.Count -eq 0) {
+        Write-Host "Found no applications with Owners" -ForegroundColor Green
+        return
+    }
+    
+    $Owners = Get-MgDirectoryObjectById -ErrorAction SilentlyContinue -Ids ($Applications | ForEach-Object {
+            $_.Owners.Id
+        } | Sort-Object -Unique)
+    
+    # need these in a specific order for Markdown output, ConvertTo-Markdown still outputs in different order
+    $Output = $Applications | ForEach-Object {
+        $App = $_
+        $OwnerIds = $App.Owners.Id
+        [PSCustomObject][Ordered]@{
+            DisplayName = $App.DisplayName
+            AppId       = $App.AppId
+            Owners      = ($OwnerIds | ForEach-Object { $Id = $_; $Owners | Where-Object { $_.Id -eq $Id } }).AdditionalProperties.userPrincipalName -join ','
+        }
+    }
+    
+    if ($OutputMarkdown.IsPresent) { $Output | ConvertTo-Markdown } else { $Output | Format-Table -AutoSize }
+}
+#endregion
+
+$LowPermissions = @('14dad69e-099b-42c9-810b-d002981feec1', 'e1fe6dd8-ba31-4d61-89e7-88639da4683d', '64a6cdd6-aab1-4aaf-94b8-3cc8405e90d0', '7427e0e9-2fba-42fe-b0c0-848c9e6a8182', '37f7f235-527c-4136-accd-4a02d197296e')
+
+#region Show-LowRiskApplicationPermissions
+function Show-LowRiskApplicationPermissions {
+    [CmdletBinding()]
+    param (
+        [switch]$ShowExplanation
+    )
+    $Explanation = @"
+These permissions are considered low risk
+"@
+    if ($ShowExplanation.IsPresent) {
+        Write-Host $Explanation
+    }
+    
+    Find-MgGraphPermission -All | Where-Object { $_.Id -in $LowPermissions } # uncomment to list low-risk permissions
+}
+#endregion
+
+#region Find-ApplicationsNonLowRiskPermissionsAndOwners
+function Find-ApplicationsNonLowRiskPermissionsAndOwners {
+    [CmdletBinding()]
+    param (
+        [switch]$ShowExplanation,
+        [switch]$OutputMarkdown
+    )
+    $Explanation = @"
+Look for applications with owners and any resource access that we do not consider low-risk. 
+"@
+    if ($ShowExplanation.IsPresent) {
+        Write-Host $Explanation
+    }
+    
+    # filter out some of the classical delegated low-risk permissions    
+($LowPermissions | ForEach-Object { Find-MgGraphPermission $_ }).Name
+    $Applications = Get-MgBetaApplication -All -ExpandProperty Owners | Where-Object {
+        $RequiredResourceAccess = $_.RequiredResourceAccess
+        $ResourceAppId = $RequiredResourceAccess.ResourceAppId
+        $ResourceAccessIds = $RequiredResourceAccess.ResourceAccess.Id
+        $HasOwners = $_.Owners.Count -gt 0
+        $HasOnlyWindowsAzureActiveDirectoryUserRead = $ResourceAppId -eq '00000002-0000-0000-c000-000000000000' -and '311a71cc-e848-46a1-bdf8-97ff7156d8e6' -in $ResourceAccessIds -and $ResourceAccessIds.Count -eq 1
+        $OnlyLowPermissions = $ResourceAppId -eq '00000003-0000-0000-c000-000000000000' -and ($ResourceAccessIds | Where-Object { $_ -notin $LowPermissions }).Count -eq 0
+        # Application has owners, has API permissions and those permission are not only low-risk permissions
+        $HasOwners -and $null -ne $_.RequiredResourceAccess -and -not $OnlyLowPermissions -and $ResourceAccessIds.Count -gt 0 -and -not $HasOnlyWindowsAzureActiveDirectoryUserRead
+    }
+
+    if ($Applications.Count -eq 0) {
+        Write-Host "Found no applications with Owners and above low-risk permissions" -ForegroundColor Green
+        return
+    }
+
+    $Owners = Get-MgDirectoryObjectById -Ids ($Applications | ForEach-Object {
+            $_.Owners.Id
+        } | Sort-Object -Unique)
+
+    # need these in a specific order for Markdown output, ConvertTo-Markdown still outputs in different order
+    $Output = $Applications | ForEach-Object {
+        $App = $_
+        $OwnerIds = $App.Owners.Id    
+        $ResourceAccessTypes = $App.RequiredResourceAccess.ResourceAccess.type
+        [PSCustomObject][Ordered]@{
+            DisplayName         = $App.DisplayName
+            AppId               = $App.AppId
+            Owners              = ($OwnerIds | ForEach-Object { $Id = $_; $Owners | Where-Object { $_.Id -eq $Id } }).AdditionalProperties.userPrincipalName -join ','
+            ResourceAccessTypes = ($ResourceAccessTypes | Sort-Object -Unique) -join ','
+        }
+    }
+
+    # TODO: pretty print headers
+
+    if ($OutputMarkdown) { $Output | ConvertTo-Markdown } else { $Output | Format-Table -AutoSize }
+}
+#endregion
+
+#region Get-EntraIdPrivilegedAppRoleAssignments
+############################################################################################################
+#                                                                                                          #
+#  Powershell script showcasing how to fetch and report on all app role assignments for Microsoft Graph    #
+#  and Azure AD Graph. Requires Microsoft Graph Powershell SDK v2, but the script can be altered to also   #
+#  work in v1 if replacing beta-cmdlets.                                                                   #
+#                                                                                                          #
+#  The script only requires read-access and a few Graph scopes in Entra ID.                                #
+#                                                                                                          #
+#  Please read the blogpost first:                                                                         #
+#  https://learningbydoing.cloud/blog/audit-ms-graph-app-role-assignments/                                 #
+#                                                                                                          #
+############################################################################################################
+
+### Start of script
+
+# asp@apento.com - making into function
+
+function Get-EntraIdPrivilegedAppRoleAssignments {
+    [CmdletBinding()]
+    param (
+        
+    )
+
+    #region: Script Configuration
+
+    # The tier 0 app roles below are typically what can be abused to become Global Admin.
+    # NOTE: Organizations should do their own investigations and include any app roles to regard as sensitive, and which tier to assign them.
+    $appRoleTiers = @{
+        'Application.ReadWrite.All'          = 'Tier 0' # SP can add credentials to other high-privileged apps, and then sign-in as the high-privileged app
+        'AppRoleAssignment.ReadWrite.All'    = 'Tier 0' # SP can add any app role assignments to any resource, including MS Graph
+        'Directory.ReadWrite.All'            = 'Tier 0' # SP can read and write all objects in the directory, including adding credentials to other high-privileged apps
+        'RoleManagement.ReadWrite.Directory' = 'Tier 0' # SP can grant any role to any principal, including Global Admin
+    }
+
+    #endregion: Script Configuration
+
+    # Connect to Microsoft Graph - assuming this has already been done
+    # Connect-MgGraph -Scopes "Application.Read.All", "AuditLog.Read.All", "CrossTenantInformation.ReadBasic.All"
+
+    # Get Microsoft Graph SPN, appRoles, appRolesAssignedTo and generate hashtable for quick lookups
+    $servicePrincipalMsGraph = Get-MgServicePrincipal -Filter "AppId eq '00000003-0000-0000-c000-000000000000'"
+    [array] $msGraphAppRoles = $servicePrincipalMsGraph.AppRoles
+    [array] $msGraphAppRolesAssignedTo = Get-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $servicePrincipalMsGraph.Id -All
+    $msGraphAppRolesHashTableId = $msGraphAppRoles | Group-Object -Property Id -AsHashTable
+
+    # Get Azure AD Graph SPN, appRoles, appRolesAssignedTo and generate hashtable for quick lookups
+    $servicePrincipalAadGraph = Get-MgServicePrincipal -Filter "AppId eq '00000002-0000-0000-c000-000000000000'"
+    [array] $aadGraphAppRoles = $servicePrincipalAadGraph.AppRoles
+    [array] $aadGraphAppRolesAssignedTo = Get-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $servicePrincipalAadGraph.Id -All
+    $aadGraphAppRolesHashTableId = $aadGraphAppRoles | Group-Object -Property Id -AsHashTable
+
+    # Join appRolesAssignedTo entries for AAD / MS Graph
+    $joinedAppRolesAssignedTo = @(
+        $msGraphAppRolesAssignedTo
+        $aadGraphAppRolesAssignedTo
+    )
+
+    # Process each appRolesAssignedTo for AAD / MS Graph
+    $progressCounter = 0
+    $cacheAppOwnerOrganizations = @()
+    $cacheServicePrincipalObjects = @()
+    $cacheServicePrincipalSigninActivities = @()
+    $cacheServicePrincipalsWithoutSigninActivities = @()
+    [array] $msGraphAppRoleAssignedToReport = $joinedAppRolesAssignedTo | ForEach-Object {
+        $progressCounter++
+        $currentAppRoleAssignedTo = $_
+        Write-Verbose "Processing appRole # $progressCounter of $($joinedAppRolesAssignedTo.count)"
+
+        # Lookup appRole for MS Graph
+        $currentAppRole = $msGraphAppRolesHashTableId["$($currentAppRoleAssignedTo.AppRoleId)"]
+        if ($null -eq $currentAppRole) {
+            # Lookup appRole for AAD Graph
+            $currentAppRole = $aadGraphAppRolesHashTableId["$($currentAppRoleAssignedTo.AppRoleId)"]
+        }
+    
+        # Lookup servicePrincipal object - check cache
+        $currentServicePrincipalObject = $null
+        if ($cacheServicePrincipalObjects.Id -contains $currentAppRoleAssignedTo.PrincipalId) {
+            $currentServicePrincipalObject = $cacheServicePrincipalObjects | Where-Object { $_.Id -eq $currentAppRoleAssignedTo.PrincipalId }
+        } 
+
+        else {
+            # Retrieve servicePrincipalObject from MS Graph
+            $currentServicePrincipalObject = Get-MgServicePrincipal -ServicePrincipalId $currentAppRoleAssignedTo.PrincipalId
+            $cacheServicePrincipalObjects += $currentServicePrincipalObject
+            Write-Verbose "Added servicePrincipal object to cache: $($currentServicePrincipalObject.displayName)"
+        }
+
+        # Lookup app owner organization
+        $currentAppOwnerOrgObject = $null
+        if ($null -ne $currentServicePrincipalObject.AppOwnerOrganizationId) {
+            # Check if app owner organization is in cache
+            if ($cacheAppOwnerOrganizations.tenantId -contains $currentServicePrincipalObject.AppOwnerOrganizationId) {
+                $currentAppOwnerOrgObject = $cacheAppOwnerOrganizations | Where-Object { $_.tenantId -eq $currentServicePrincipalObject.AppOwnerOrganizationId }
+            } 
+
+            else {
+                # Retrieve app owner organization from MS Graph
+                $currentAppOwnerOrgObject = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/tenantRelationships/findTenantInformationByTenantId(tenantId='$($currentServicePrincipalObject.AppOwnerOrganizationId)')"
+                $cacheAppOwnerOrganizations += $currentAppOwnerOrgObject
+                Write-Verbose "Added app owner organization tenant to cache: $($currentAppOwnerOrgObject.displayName)"
+            }
+        }
+
+        # Lookup servicePrincipal sign-in activity if not already in no-signin-activity list
+        $currentSpSigninActivity = $null
+        if ($currentServicePrincipalObject.AppId -notin $cacheServicePrincipalsWithoutSigninActivities) {
+            if ($cacheServicePrincipalSigninActivities.AppId -contains $currentServicePrincipalObject.AppId) {
+                $currentSpSigninActivity = $cacheServicePrincipalSigninActivities | Where-Object { $_.AppId -eq $currentServicePrincipalObject.AppId }
+            } 
+
+            else {
+                # Retrieve servicePrincipal sign-in activity from MS Graph
+                $currentSpSigninActivity = Get-MgBetaReportServicePrincipalSignInActivity -Filter "AppId eq '$($currentServicePrincipalObject.AppId)'"
+            
+                # If sign-in activity was found, add it to the cache - else add appId to no-signin-activity list
+                if ($currentSpSigninActivity) {
+                    $cacheServicePrincipalSigninActivities += $currentSpSigninActivity
+                    Write-Verbose "Found servicePrincipal sign-in activity and added it to cache: $($currentServicePrincipalObject.displayName)"
+                }
+
+                else {
+                    $cacheServicePrincipalsWithoutSigninActivities += $currentServicePrincipalObject.AppId
+                    Write-Verbose "Did not find servicePrincipal sign-in activity: $($currentServicePrincipalObject.displayName)"
+                }
+            }
+        }
+
+        # Create reporting object
+        [PSCustomObject][Ordered]@{
+            AppRoleTier                                     = $appRoleTiers["$($currentAppRole.Value)"]
+            ServicePrincipalDisplayName                     = $currentServicePrincipalObject.DisplayName
+            ServicePrincipalId                              = $currentServicePrincipalObject.Id
+            ServicePrincipalType                            = $currentServicePrincipalObject.ServicePrincipalType
+            ServicePrincipalEnabled                         = $currentServicePrincipalObject.AccountEnabled
+            AppId                                           = $currentServicePrincipalObject.AppId
+            AppSignInAudience                               = $currentServicePrincipalObject.SignInAudience
+            AppOwnerOrganizationTenantId                    = $currentServicePrincipalObject.AppOwnerOrganizationId
+            AppOwnerOrganizationTenantName                  = $currentAppOwnerOrgObject.DisplayName
+            AppOwnerOrganizationTenantDomain                = $currentAppOwnerOrgObject.DefaultDomainName
+            Resource                                        = $currentAppRoleAssignedTo.ResourceDisplayName
+            AppRole                                         = $currentAppRole.Value
+            AppRoleAssignedDate                             = $(if ($currentAppRoleAssignedTo.CreatedDateTime) { (Get-Date $currentAppRoleAssignedTo.CreatedDateTime -Format 'yyyy-MM-dd') })
+            AppRoleName                                     = $currentAppRole.DisplayName
+            AppRoleDescription                              = $currentAppRole.Description
+            LastSignInActivity                              = $currentSpSigninActivity.LastSignInActivity.LastSignInDateTime
+            DelegatedClientSignInActivity                   = $currentSpSigninActivity.DelegatedClientSignInActivity.LastSignInDateTime
+            DelegatedResourceSignInActivity                 = $currentSpSigninActivity.DelegatedResourceSignInActivity.LastSignInDateTime
+            ApplicationAuthenticationClientSignInActivity   = $currentSpSigninActivity.ApplicationAuthenticationClientSignInActivity.LastSignInDateTime
+            ApplicationAuthenticationResourceSignInActivity = $currentSpSigninActivity.ApplicationAuthenticationResourceSignInActivity.LastSignInDateTime
+        }
+    }
+
+    $msGraphAppRoleAssignedToReport
+}
+#endregion
+
+#region Get-PrivilegedAppRoleAssignments
+function Get-PrivilegedAppRoleAssignments {
+    [CmdletBinding()]
+    param (
+        [switch]$ShowExplanation,
+        [switch]$OutputMarkdown
+    )
+    $Explanation = @"
+
+"@
+    if ($ShowExplanation.IsPresent) {
+        Write-Host $Explanation
+    }
+    $Output = Get-EntraIdPrivilegedAppRoleAssignments -ErrorAction Stop
+    # lots of properties. We need to reduce to make it fit in Markdown
+    if ($OutputMarkdown.IsPresent) { $Output | Select-Object -Property @{ Name = 'Tier 0'; Expression = { $_.AppRoleTier -like "*Tier 0*" ? "Y" : "N" } }, @{ Name = 'AppRole'; Expression = { "$($_.AppRole) ($($_.AppRoleName))" } }, LastSignInActivity, ServicePrincipalDisplayName | ConvertTo-Markdown } else { $Output | Format-Table -AutoSize }
+}
+#endregion
+
+#region Test-ConditionalAccessPolicy
+function Test-ConditionalAccessPolicy {
+    param (
+        [parameter(ParameterSetName = "BlockLegacyProtocols")][switch]$BlockLegacyProtocols,
+        [parameter(ParameterSetName = "MfaAdministrators")][switch]$MfaAdministrators,
+        [parameter(ParameterSetName = "MfaAzureManagement")][switch]$MfaAzureManagement
+    )
+
+    $CompliantText = ''
+    $NonCompliantText = 'No valid CA Policy found'
+    ## BLOCK LEGACY PROTOCOLS ##
+    if ($BlockLegacyProtocols.IsPresent) {
+        # we are looking for a policy that is enabled, the control is block, includes all users, and condition is legacy clients
+        $Filter = "state eq 'enabled' and grantControls/builtInControls/all(i:i eq 'block') and conditions/users/includeUsers/all(i:i eq 'All') and conditions/clientAppTypes/all(i:i eq 'exchangeActiveSync' or i eq 'other')"
+        # need to use the beta API as v1.0 does not include policies made from templates
+        $BlockLegacyProtocolPolicy = Get-MgBetaIdentityConditionalAccessPolicy -Filter $Filter
+
+        # $BlockLegacyProtocolPolicy | Select-Object -Property DisplayName, Id
+
+        $ExcludeUsers = $BlockLegacyProtocolPolicy.Conditions.Users.ExcludeUsers
+        $ExcludeGroups = $BlockLegacyProtocolPolicy.Conditions.Users.ExcludeGroups
+        $ExcludeGuestsOrExternalUsers = $BlockLegacyProtocolPolicy.Conditions.Users.ExcludeGuestsOrExternalUsers
+
+        # TODO:
+        # $ExcludeGroups
+        # $ExcludeGuestsOrExternalUsers
+
+        $Compliant = $null -ne $BlockLegacyProtocolPolicy -and $BlockLegacyProtocolPolicy.Count -gt 0
+        $CompliantText = 'CA Policy found blocking legacy protocols'
+        $NonCompliantText = 'No valid CA Policy found blocking legacy protocols'
+    } # end if ($BlockLegacyProtocols.IsPresent)
+
+    ## MFA FOR ADMINISTRATORS ##
+    if ($MfaAdministrators.IsPresent) {
+        # we are looking for a policy that is enabled, the control is MFA or authentication strenght, includes specific roles, and includes all applications
+        $PrivilegedRolesList = "('62e90394-69f5-4237-9190-012177145e10','194ae4cb-b126-40b2-bd5b-6091b380977d','f28a1f50-f6e7-4571-818b-6a12f2af6b6c','29232cdf-9323-42fd-ade2-1d097af3e4de','b1be1c3e-b65d-4f19-8427-f6fa0d97feb9','729827e3-9c14-49f7-bb1b-9608f156bbb8','b0f54661-2d74-4c50-afa3-1ec803f12efe','fe930be7-5e62-47db-91af-98c3a49a38b1','c4e39bd9-1100-46d3-8c65-fb160da0071f','9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3','158c047a-c907-4556-b7ef-446551a6b5f7','966707d0-3269-4727-9be2-8c3a10f19b9d','7be44c8a-adaf-4e2a-84d6-ab2649e08a13','e8611ab8-c189-46e8-94e1-60213ab1f814')"
+        # cannot filter on authenticationStrength: Invalid $filter: navigation property 'authenticationStrength' not found on type 'microsoft.graph.conditionalAccessPolicy'.
+        # we will do this when checking if the policy is compliant
+        $Filter = "state eq 'enabled' and conditions/applications/includeApplications/all(i:i eq 'All') and conditions/users/includeRoles/`$count gt 0 and conditions/users/includeRoles/all(i:i in $PrivilegedRolesList)" # and (grantControls/builtInControls/all(i:i eq 'mfa') or grantControls/authenticationStrength ne null)
+        # need to use the beta API as v1.0 does not include policies made from templates
+        $RequireMfaAdminsPolicy = Get-MgBetaIdentityConditionalAccessPolicy -Filter $Filter
+
+        # $RequireMfaAdminsPolicy | Select-Object -Property DisplayName, Id
+
+        $ExcludeUsers = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeUsers
+        $ExcludeGroups = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeGroups
+        $ExcludeGuestsOrExternalUsers = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeGuestsOrExternalUsers
+
+        # TODO:
+        # $ExcludeGroups
+        # $ExcludeGuestsOrExternalUsers
+
+        if ($RequireMfaAdminsPolicy.Count -gt 1) {
+            # $Compliant will become $false as we expect a single policy
+            Write-Warning "Found multiple matching CA policies:`n$($RequireMfaAdminsPolicy.DisplayName -join ',')"
+        }
+        $Compliant = $null -ne $RequireMfaAdminsPolicy -and $RequireMfaAdminsPolicy.Count -eq 1 -and ('mfa' -in $RequireMfaAdminsPolicy.GrantControls.builtInControls -or $RequireMfaAdminsPolicy.GrantControls.authenticationStrength.requirementsSatisfied -eq 'mfa')
+        $CompliantText = 'CA Policy found that requires administrators to use MFA or better'
+        $NonCompliantText = 'No valid CA Policy found targeting Azure administrators'
+    } # end if ($MfaAdministrators.IsPresent)
+
+    ## ## MFA FOR AZURE MANAGEMENT ##
+    if ($MfaAzureManagement.IsPresent) {
+        # we are looking for a policy that is enabled, the control is MFA or authentication strenght, targeting application "Microsoft Azure Management"
+        # cannot filter on authenticationStrength: Invalid $filter: navigation property 'authenticationStrength' not found on type 'microsoft.graph.conditionalAccessPolicy'.
+        # we will do this when checking if the policy is compliant
+        $Filter = "state eq 'enabled' and conditions/applications/includeApplications/all(i:i eq '797f4846-ba00-4fd7-ba43-dac1f8f63013') and conditions/users/includeRoles/`$count gt 0 and conditions/users/includeUsers/all(i:i eq 'All')" # and (grantControls/builtInControls/all(i:i eq 'mfa') or grantControls/authenticationStrength ne null)
+        # need to use the beta API as v1.0 does not include policies made from templates
+        $RequireMfaAdminsPolicy = Get-MgBetaIdentityConditionalAccessPolicy -Filter $Filter
+
+        # $RequireMfaAdminsPolicy | Select-Object -Property DisplayName, Id
+
+        $ExcludeUsers = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeUsers
+        $ExcludeGroups = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeGroups
+        $ExcludeGuestsOrExternalUsers = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeGuestsOrExternalUsers
+
+        # TODO:
+        # $ExcludeGroups
+        # $ExcludeGuestsOrExternalUsers
+
+        if ($RequireMfaAdminsPolicy.Count -gt 1) {
+            # $Compliant will become $false as we expect a single policy
+            Write-Warning "Found multiple matching CA policies"
+        }
+        $Compliant = $null -ne $RequireMfaAdminsPolicy -and $RequireMfaAdminsPolicy.Count -eq 1 -and ('mfa' -in $RequireMfaAdminsPolicy.GrantControls.builtInControls -or $RequireMfaAdminsPolicy.GrantControls.authenticationStrength.requirementsSatisfied -eq 'mfa')
+        $CompliantText = 'CA Policy found that requires MFA or better to use "Microsoft Azure Management"'
+    }
+
+    if ($Compliant) {
+        Write-Host "Compliant to control; $CompliantText" -ForegroundColor Green
+        # only makes sense to show if the policy is compliant
+        $ExcludeUsers | Where-Object { $null -ne $_ } | ForEach-Object {
+            $ExcludedUser = Get-MgUser -Filter "id eq '$_'"
+            Write-Host "Excluded user: $($ExcludedUser.DisplayName) ($($ExcludedUser.UserPrincipalName))"
+        }        
+    }
+    else {
+        Write-Host "Not compliant to control; $NonCompliantText" -ForegroundColor Red
+    }
+}
+#endregion
+
 <#
 . "..\src\functions.ps1"
 #>
