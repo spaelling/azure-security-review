@@ -438,3 +438,23 @@ if erroNo is not 0 then it lists signin failures and a reason
 }
 #endregion
 
+function Initialize-Notebook {
+    [CmdletBinding()]
+    param ()
+    
+    $TenantId = if($null -eq $TenantId){ Read-Host -Prompt "Enter tenant ID" } else { $TenantId }
+
+    # connect once for all necessary scopes for this notebook - these are delegated permissions so we cannot do something the authenticated user could not already do!
+    # This means that 'Microsoft Graph Command Line Tools' must be approved by a Global Administrator
+    # Disconnect-Graph
+    # TODO: use Get-MgContext to check if we need to connect again
+    # NOTE: Never request a write scope!
+    $Scopes = "Directory.AccessAsUser.All", "Policy.Read.All", "RoleManagement.Read.Directory", "RoleManagementAlert.Read.Directory", "AccessReview.Read.All", "Application.Read.All", "Directory.Read.All", "AuditLog.Read.All", "CrossTenantInformation.ReadBasic.All"
+    $null = Connect-MgGraph -Scopes $Scopes -TenantId $TenantId -ContextScope Process -ErrorAction Stop -NoWelcome
+
+    Write-Host "Connected to tenant '$TenantId' with the following scope: $Scopes"
+    $null = Set-AzContext -TenantId $TenantId -ErrorAction Stop -WarningAction SilentlyContinue
+
+    <#  https://microsoft.com/devicelogin  #>
+    # $Token = if ([string]::IsNullOrEmpty($Token)) { Get-DeviceCodeAuthenticationToken -tenantId $TenantId -Verbose } else { $Token }
+}
