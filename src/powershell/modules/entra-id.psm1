@@ -6,7 +6,8 @@ functions used in the identity notebook.
 function Get-UserStates {
     [CmdletBinding()]
     param (
-        [switch]$OutputToHost
+        [switch]$OutputToHost,
+        [switch]$OutputMarkdown
     )
 
     $TotalUsers = (Get-MgUser -All -Property Id).Count
@@ -24,12 +25,13 @@ function Get-UserStates {
     }
     else {
         # return an object
-        @{
+        $Output = [pscustomobject] @{
             TotalUsers    = $TotalUsers
             DisabledUsers = $DisabledUsers
             GuestUsers    = $GuestUsers
             DeletedUsers  = $DeletedUsers
         }
+        if ($OutputMarkdown.IsPresent) { $Output | ConvertTo-Markdown } else { $Output | Format-Table -AutoSize }
     }
 }
 #endregion
@@ -99,7 +101,6 @@ function Get-GlobalAdminstrators {
         }
     }
 
-    Write-Host "`nGlobal Administrators:`n"
     $Output = $Setting | Select-Object -Property Id, @{ Name = 'Display Name'; Expression = { $_.AdditionalProperties.displayName } }, @{ Name = 'User Principal Name'; Expression = { $_.AdditionalProperties.userPrincipalName } }
 
     if ($OutputMarkdown.IsPresent) { $Output | ConvertTo-Markdown } else { $Output | Format-Table -AutoSize }
@@ -115,7 +116,11 @@ function Get-SynchronizedAccounts {
     )
     $PrivilegedRolesList = @('62e90394-69f5-4237-9190-012177145e10', '194ae4cb-b126-40b2-bd5b-6091b380977d', 'f28a1f50-f6e7-4571-818b-6a12f2af6b6c', '29232cdf-9323-42fd-ade2-1d097af3e4de', 'b1be1c3e-b65d-4f19-8427-f6fa0d97feb9', '729827e3-9c14-49f7-bb1b-9608f156bbb8', 'b0f54661-2d74-4c50-afa3-1ec803f12efe', 'fe930be7-5e62-47db-91af-98c3a49a38b1', 'c4e39bd9-1100-46d3-8c65-fb160da0071f', '9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3', '158c047a-c907-4556-b7ef-446551a6b5f7', '966707d0-3269-4727-9be2-8c3a10f19b9d', '7be44c8a-adaf-4e2a-84d6-ab2649e08a13', 'e8611ab8-c189-46e8-94e1-60213ab1f814')
 
-    # TODO: check if there is any synchronized accounts at all
+    # check if there is any synchronized accounts at all
+    $SynchronizedAccounts = Get-MgUser -Filter "onPremisesSyncEnabled eq true" -All # TODO: test and only return the count
+    if($SynchronizedAccounts.Count -eq 0) {
+        return
+    }
 
     $i = 0
     $UsersWithPrivilegedRoles = $PrivilegedRolesList | ForEach-Object {    
@@ -215,7 +220,8 @@ function Get-RecurringAccessReviews {
     )
     $AccessReviewDefinitions = Get-MgBetaIdentityGovernanceAccessReviewDefinition
 
-    Write-Host "Access review definitions: $(($AccessReviewDefinitions | Measure-Object).Count)"
+    $Output = [pscustomobject] @{"Access review definitions"= $(($AccessReviewDefinitions | Measure-Object).Count)}
+    if ($OutputMarkdown.IsPresent) { $Output | ConvertTo-Markdown } else { $Output | Format-Table -AutoSize }
 }
 #endregion
 
@@ -275,7 +281,6 @@ function Test-StandingAccess {
     # get permanent assignments of privileged Entra ID roles
 
     $PrivilegedRolesList = @('62e90394-69f5-4237-9190-012177145e10', '194ae4cb-b126-40b2-bd5b-6091b380977d', 'f28a1f50-f6e7-4571-818b-6a12f2af6b6c', '29232cdf-9323-42fd-ade2-1d097af3e4de', 'b1be1c3e-b65d-4f19-8427-f6fa0d97feb9', '729827e3-9c14-49f7-bb1b-9608f156bbb8', 'b0f54661-2d74-4c50-afa3-1ec803f12efe', 'fe930be7-5e62-47db-91af-98c3a49a38b1', 'c4e39bd9-1100-46d3-8c65-fb160da0071f', '9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3', '158c047a-c907-4556-b7ef-446551a6b5f7', '966707d0-3269-4727-9be2-8c3a10f19b9d', '7be44c8a-adaf-4e2a-84d6-ab2649e08a13', 'e8611ab8-c189-46e8-94e1-60213ab1f814')
-    . "..\src\functions.ps1"
 
     $i = 0
     $Output = $PrivilegedRolesList | ForEach-Object {    
@@ -299,7 +304,8 @@ function Test-GuestInviteSettings {
     [CmdletBinding()]
     param (
         [switch]$OutputToHost,
-        [switch]$ShowExplanation
+        [switch]$ShowExplanation,
+        [switch]$OutputMarkdown
     )
     $AuthorizationPolicy = Get-MgPolicyAuthorizationPolicy
 
@@ -317,6 +323,13 @@ function Test-GuestInviteSettings {
         else {
             Write-Host "Not compliant to control, setting is $($Setting)" -ForegroundColor Red
         }
+    }
+    if ($OutputMarkdown.IsPresent) {
+        # return an object
+        $Output = [pscustomobject] @{
+            "Guest invite settings" = $Setting
+        }
+        $Output | ConvertTo-Markdown
     }
 }
 #endregion
@@ -349,7 +362,8 @@ function Test-UsersCanRegisterApplications {
     [CmdletBinding()]
     param (
         [switch]$OutputToHost,
-        [switch]$ShowExplanation
+        [switch]$ShowExplanation,
+        [switch]$OutputMarkdown
     )
     $Explanation = @"
 Users can register applications should be set to `No`.
@@ -371,6 +385,13 @@ Users should not be allowed to register applications. Use specific roles such as
         else {
             Write-Host "Not compliant to control; users are allowed to create applications" -ForegroundColor Red
         }
+    }
+    if ($OutputMarkdown.IsPresent) {
+        # return an object
+        $Output = [pscustomobject] @{
+            "Users are allowed to create applications" = $Compliant ? "No" : "Yes"
+        }
+        $Output | ConvertTo-Markdown
     }
 }
 #endregion
@@ -421,7 +442,8 @@ function Test-VerifiedDomains {
     [CmdletBinding()]
     param (
         [switch]$OutputToHost,
-        [switch]$ShowExplanation
+        [switch]$ShowExplanation,
+        [switch]$OutputMarkdown
     )
     $Explanation = @"
 Check that only validated customer domains are registered in the tenant.
@@ -433,16 +455,22 @@ Check that only validated customer domains are registered in the tenant.
 
     $UnverifiedDomains = $Domains | Where-Object { -not $_.IsVerified }
 
-    $Setting = $UnverifiedDomains
-    $Compliant = $Setting.Count -eq 0
+    $Compliant = $UnverifiedDomains.Count -eq 0
 
     if ($OutputToHost.IsPresent) {
         if ($Compliant) {
             Write-Host "Compliant to control; All ($($Domains.Count)) domains are verified" -ForegroundColor Green
         }
         else {
-            Write-Host "Not compliant to control; There are unverified domains registered: $($Setting | Select-Object -ExpandProperty Id)" -ForegroundColor Red
+            Write-Host "Not compliant to control; There are unverified domains registered: $($UnverifiedDomains | Select-Object -ExpandProperty Id)" -ForegroundColor Red
         }
+    }
+    if ($OutputMarkdown.IsPresent) {
+        # return an object
+        $Output = [pscustomobject] @{
+            "Unverified domains registered" = $Compliant ? "0" : ($UnverifiedDomains | Select-Object -ExpandProperty Id)
+        }
+        $Output | ConvertTo-Markdown
     }
 }
 #endregion
@@ -452,7 +480,8 @@ function Test-UserConsentForApps {
     [CmdletBinding()]
     param (
         [switch]$OutputToHost,
-        [switch]$ShowExplanation
+        [switch]$ShowExplanation,
+        [switch]$OutputMarkdown
     )
     $Explanation = @"
 Users should only be allowed to consent to apps from verified publishers or not consent at all. Allowing users to consent to any application is a security risk.
@@ -474,6 +503,13 @@ Users should only be allowed to consent to apps from verified publishers or not 
         else {
             Write-Host "Not compliant to control; users are allowed to consent to all applications." -ForegroundColor Red
         }
+    }
+    if ($OutputMarkdown.IsPresent) {
+        # return an object
+        $Output = [pscustomobject] @{
+            "Users are allowed to consent to all applications" = $Compliant ? "No" : "Yes"
+        }
+        $Output | ConvertTo-Markdown
     }
 }
 #endregion
@@ -500,7 +536,8 @@ function Find-OwnersFirstPartyMicrosoftApplications {
     [CmdletBinding()]
     param (
         [switch]$OutputToHost,
-        [switch]$ShowExplanation
+        [switch]$ShowExplanation,
+        [switch]$OutputMarkdown
     )
     $Explanation = @"
 Owners of builtin applications can be exploited, see https://dirkjanm.io/azure-ad-privilege-escalation-application-admin/
@@ -508,12 +545,16 @@ Owners of builtin applications can be exploited, see https://dirkjanm.io/azure-a
     if ($ShowExplanation.IsPresent) {
         Write-Host $Explanation
     }
-    Get-MgBetaServicePrincipal -all -ExpandProperty owners | `
+    $Output = Get-MgBetaServicePrincipal -all -ExpandProperty owners | `
         # looking for first-party Microsoft applications with owners
         # TODO: convert to filter
     Where-Object { $_.PublisherName -like "*Microsoft*" -or !($_.PublisherName -eq "Microsoft Accounts") -and $_.AppOwnerOrganizationId -eq 'f8cdef31-a31e-4b4a-93e4-5f571e91255a' } | `
         Where-Object { $_.owners -like "*" } | Select-Object appid, displayname, PublisherName, owners # TODO: look up owner
-
+    if($OutputToHost.IsPresent) {
+    }
+    if ($OutputMarkdown.IsPresent) {
+        $Output | ConvertTo-Markdown
+    }
     # TODO: can we look for anyone who persisted access through one of these? 
 }
 #endregion
@@ -541,7 +582,7 @@ function Find-ApplicationsWithApplicationPermissionsAndOwner {
     }
     
     if ($Applications.Count -eq 0) {
-        Write-Host "Found no applications with Owners" -ForegroundColor Green
+        "Found no applications with Owners"
         return
     }
     
@@ -570,7 +611,8 @@ $LowPermissions = @('14dad69e-099b-42c9-810b-d002981feec1', 'e1fe6dd8-ba31-4d61-
 function Show-LowRiskApplicationPermissions {
     [CmdletBinding()]
     param (
-        [switch]$ShowExplanation
+        [switch]$ShowExplanation,
+        [switch]$OutputMarkdown
     )
     $Explanation = @"
 These permissions are considered low risk
@@ -579,7 +621,14 @@ These permissions are considered low risk
         Write-Host $Explanation
     }
     
-    Find-MgGraphPermission -All | Where-Object { $_.Id -in $LowPermissions } # uncomment to list low-risk permissions
+    $Output = Find-MgGraphPermission -All | Where-Object { $_.Id -in $LowPermissions } # uncomment to list low-risk permissions
+
+    if ($OutputMarkdown.IsPresent) {
+        $Output | ConvertTo-Markdown
+    }
+    else {
+        $Output | Format-Table -AutoSize
+    }
 }
 #endregion
 
@@ -611,7 +660,7 @@ Look for applications with owners and any resource access that we do not conside
     }
 
     if ($Applications.Count -eq 0) {
-        Write-Host "Found no applications with Owners and above low-risk permissions" -ForegroundColor Green
+        "Found no applications with Owners and above low-risk permissions"
         return
     }
 
@@ -809,7 +858,7 @@ function Get-PrivilegedAppRoleAssignments {
     if ($ShowExplanation.IsPresent) {
         Write-Host $Explanation
     }
-    $Output = Get-EntraIdPrivilegedAppRoleAssignments -ErrorAction Stop
+    $Output = Get-EntraIdPrivilegedAppRoleAssignments -ErrorAction SilentlyContinue
     # lots of properties. We need to reduce to make it fit in Markdown
     if ($OutputMarkdown.IsPresent) { $Output | Select-Object -Property @{ Name = 'Tier 0'; Expression = { $_.AppRoleTier -like "*Tier 0*" ? "Y" : "N" } }, @{ Name = 'AppRole'; Expression = { "$($_.AppRole) ($($_.AppRoleName))" } }, LastSignInActivity, ServicePrincipalDisplayName | ConvertTo-Markdown } else { $Output | Format-Table -AutoSize }
 }
@@ -819,6 +868,7 @@ function Get-PrivilegedAppRoleAssignments {
 function Test-ConditionalAccessPolicy {
     param (
         [switch]$OutputMarkdown,
+        [switch]$OutputToHost,
         [parameter(ParameterSetName = "BlockLegacyProtocols")][switch]$BlockLegacyProtocols,
         [parameter(ParameterSetName = "MfaAdministrators")][switch]$MfaAdministrators,
         [parameter(ParameterSetName = "MfaAzureManagement")][switch]$MfaAzureManagement,
@@ -828,6 +878,7 @@ function Test-ConditionalAccessPolicy {
 
     $CompliantText = ''
     $NonCompliantText = 'No valid CA Policy found'
+    $Output = [pscustomobject] @{}
     ## BLOCK LEGACY PROTOCOLS ##
     if ($BlockLegacyProtocols.IsPresent) {
         # we are looking for a policy that is enabled, the control is block, includes all users, and condition is legacy clients
@@ -946,18 +997,38 @@ function Test-ConditionalAccessPolicy {
         $Compliant = $null -ne $CompliantDevicePolicy -and $CompliantDevicePolicy.Count -gt 0
         $CompliantText = "CA Policy found that requires devices to be marked as compliant:`n$($CompliantDevicePolicy.DisplayName -join ',')"
     }
-    if ($Compliant) {
-        Write-Host "Compliant to control; $CompliantText" -ForegroundColor Green
-        # only makes sense to show if the policy is compliant
-        $ExcludeUsers | Where-Object { $null -ne $_ } | ForEach-Object {
-            $ExcludedUser = Get-MgUser -Filter "id eq '$_'"
-            Write-Host "Excluded user: $($ExcludedUser.DisplayName) ($($ExcludedUser.UserPrincipalName))"
-        }        
+
+    # Output for use in markdown
+    $Output = [pscustomobject] @{
+        "Policy compliance" = $Compliant ? $CompliantText : $NonCompliantText
     }
-    else {
-        Write-Host "Not compliant to control; $NonCompliantText" -ForegroundColor Red
+
+    if($OutputToHost.IsPresent)
+    {
+        if ($Compliant) {
+            Write-Host "Compliant to control; $CompliantText" -ForegroundColor Green
+            # only makes sense to show if the policy is compliant
+            $ExcludeUsers | Where-Object { $null -ne $_ } | ForEach-Object {
+                $ExcludedUser = Get-MgUser -Filter "id eq '$_'"
+                Write-Host "Excluded user: $($ExcludedUser.DisplayName) ($($ExcludedUser.UserPrincipalName))"
+            }        
+        }
+        else {
+            Write-Host "Not compliant to control; $NonCompliantText" -ForegroundColor Red
+        }
     }
-    if ($OutputMarkdown.IsPresent) { $Output | ConvertTo-Markdown } else { $Output | Format-Table -AutoSize }
+    if ($OutputMarkdown.IsPresent) { 
+        $Output | ConvertTo-Markdown 
+        # only makes sense to show excluded users if the policy is compliant
+        if ($Compliant) {
+            $ExcludeUsers | Where-Object { $null -ne $_ } | ForEach-Object {
+                $ExcludedUser = Get-MgUser -Filter "id eq '$_'"
+                [pscustomobject] @{
+                    "Excluded user" = "$($ExcludedUser.DisplayName) ($($ExcludedUser.UserPrincipalName))"
+                }
+            } | ConvertTo-Markdown      
+        }
+    } else { $Output | Format-Table -AutoSize }
 }
 #endregion
 
@@ -1002,7 +1073,3 @@ function Test-ProtectedActions {
     }    
 }
 #endregion
-
-<#
-. "..\src\functions.ps1"
-#>
