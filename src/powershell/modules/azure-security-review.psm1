@@ -1,5 +1,5 @@
 
-. "$PSScriptRoot\identity.ps1"
+Import-Module "$PSScriptRoot\identity.psm1"
 
 #region Invoke-AzResourceGraphCheck
 function Invoke-AzResourceGraphCheck {
@@ -438,23 +438,33 @@ if erroNo is not 0 then it lists signin failures and a reason
 }
 #endregion
 
+#region Initialize-Notebook
 function Initialize-Notebook {
     [CmdletBinding()]
-    param ()
+    param (
+        $TenantId = $Global:TenantId,
+        $Scopes = @("Directory.AccessAsUser.All", "Policy.Read.All", "RoleManagement.Read.Directory", "RoleManagementAlert.Read.Directory", "AccessReview.Read.All", "Application.Read.All", "Directory.Read.All", "AuditLog.Read.All", "CrossTenantInformation.ReadBasic.All")
+    )
     
-    $TenantId = if($null -eq $TenantId){ Read-Host -Prompt "Enter tenant ID" } else { $TenantId }
+    # these scopes are added automatically. To avoid a difference when comparing scopes we add them now
+    $Scopes = $Scopes + @('profile','openid','User.Read','email') | Sort-Object -Unique
+    $TenantId = $Global:TenantId = if($null -eq $TenantId){ Read-Host -Prompt "Enter tenant ID" } else { $TenantId }
+
+    # TODO: write a warning if any scope is a write scope
 
     # connect once for all necessary scopes for this notebook - these are delegated permissions so we cannot do something the authenticated user could not already do!
     # This means that 'Microsoft Graph Command Line Tools' must be approved by a Global Administrator
-    # Disconnect-Graph
-    # TODO: use Get-MgContext to check if we need to connect again
-    # NOTE: Never request a write scope!
-    $Scopes = "Directory.AccessAsUser.All", "Policy.Read.All", "RoleManagement.Read.Directory", "RoleManagementAlert.Read.Directory", "AccessReview.Read.All", "Application.Read.All", "Directory.Read.All", "AuditLog.Read.All", "CrossTenantInformation.ReadBasic.All"
-    $null = Connect-MgGraph -Scopes $Scopes -TenantId $TenantId -ContextScope Process -ErrorAction Stop -NoWelcome
+    # use Get-MgContext to check if we need to connect again
+    $MgContext = Get-MgContext
+    $AlreadyConnected = $null -eq $MgContext -or $MgContext.TenantId -ne $TenantId -or $null -ne (Compare-Object -ReferenceObject $MgContext.Scopes -DifferenceObject $Scopes)
+    if ($AlreadyConnected) {
+        $null = Connect-MgGraph -Scopes $Scopes -TenantId $TenantId -ContextScope Process -ErrorAction Stop -NoWelcome
+    }
+    else {
+        Write-Verbose "Already connected to tenant '$TenantId' with the following scope: $($MgContext.Scopes)"
+    }
 
     Write-Host "Connected to tenant '$TenantId' with the following scope: $Scopes"
     $null = Set-AzContext -TenantId $TenantId -ErrorAction Stop -WarningAction SilentlyContinue
-
-    <#  https://microsoft.com/devicelogin  #>
-    # $Token = if ([string]::IsNullOrEmpty($Token)) { Get-DeviceCodeAuthenticationToken -tenantId $TenantId -Verbose } else { $Token }
 }
+#endregion
