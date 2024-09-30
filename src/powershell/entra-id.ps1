@@ -1,14 +1,23 @@
 <# This is the pure powershell based Entra ID assessment. It will strongly correlate to the experience in entra-id.ipynb (Notebook)
-#>
 
+# run below if changes has been made to the module
 Remove-Module -Name azure-security-review -Force -ErrorAction SilentlyContinue
 Import-Module ".\modules\azure-security-review.psm1"
+#>
 
-$TenantId = "1b775964-7849-4f1a-8052-60b8e5c59b96"
+function Start-EntraIdAssessment {
+    param(
+        [string]$TenantId = "1b775964-7849-4f1a-8052-60b8e5c59b96",
+        [string]$OutputFolder = ".\",
+        [SecureString]$AccessToken = $null
+    )
 
-Initialize-Notebook -TenantId $TenantId
+    $ErrorActionPreference = "Stop"
 
-$Markdown = @"
+    Initialize-Notebook -TenantId $TenantId -AccessToken $AccessToken   
+
+    #region Markdown here-string
+    $Markdown = @"
 # Entra ID Review for tenant $TenantId
 
 ## Users
@@ -331,5 +340,7 @@ Use [Protected Actions](https://learn.microsoft.com/en-us/azure/active-directory
 
 $((Test-ProtectedActions) -join "`n")
 "@
+    #endregion
 
-$Markdown | Out-File -FilePath "entra-id.md"
+    $Markdown | Out-File -FilePath "$OutputFolder\entra-id-$TenantId.md"
+}
