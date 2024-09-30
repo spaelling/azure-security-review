@@ -477,3 +477,93 @@ function Initialize-Notebook {
     $null = Set-AzContext -TenantId $TenantId -ErrorAction Stop -WarningAction SilentlyContinue
 }
 #endregion
+
+<#
+.SYNOPSIS
+Creates a new multi-tenant application in the specified tenant.
+
+.DESCRIPTION
+Creates a new multi-tenant application in the specified tenant. The application will have the application permissions to conduct the Entra ID Security Assessment.
+
+.PARAMETER TenantId
+Specifies the tenant ID of the tenant to create the application in.
+
+.PARAMETER AppDisplayName
+The display name of the application. Default is "Entra ID Security Assessment"
+
+.EXAMPLE
+New-MultiTenantApplication -TenantId 'abcdefg-8c5e-4a10-a32e-523da88a4c99'
+
+.NOTES
+General notes
+#>
+function New-MultiTenantApplication {
+    [CmdletBinding()]
+    param (
+        $TenantId,
+        $AppDisplayName = "Entra ID Security Assessment"
+    )
+    Connect-MgGraph -Scopes "Application.ReadWrite.All", "Directory.ReadWrite.All" -TenantId $TenantId -NoWelcome
+
+    $apiPermission = @{
+        "resourceAppId"  = "00000003-0000-0000-c000-000000000000"  # Microsoft Graph
+        "resourceAccess" = @(
+            @{
+                "id"   = "d07a8cc0-3d51-4b77-b3b0-32704d1f69fa" # AccessReview.Read.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "9a5d68dd-52b0-4cc2-bd40-abcf44ac3a30" # Application.Read.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "b0afded3-3588-46d8-8b3d-9842eff778da" # AuditLog.Read.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "cac88765-0581-4025-9725-5ebc13f729ee" # CrossTenantInformation.ReadBasic.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "7ab1d382-f21e-4acd-a863-ba3e13f7da61" # Directory.Read.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "246dd0d5-5bd0-4def-940b-0421030a5b68" # Policy.Read.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "d5fe8ce8-684c-4c83-a52c-46e882ce4be1" # RoleAssignmentSchedule.Read.Directory
+                "type" = "Role"
+            }
+            @{
+                "id"   = "ff278e11-4a33-4d0c-83d2-d01dc58929a5" # RoleEligibilitySchedule.Read.Directory
+                "type" = "Role"
+            }
+            @{
+                "id"   = "c7fbd983-d9aa-4fa7-84b8-17382c103bc4" # RoleManagement.Read.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "483bed4a-2ad3-4361-a73b-c83ccdbdc53c" # RoleManagement.Read.Directory
+                "type" = "Role"
+            }
+            @{
+                "id"   = "ef31918f-2d50-4755-8943-b8638c0a077e" # RoleManagementAlert.Read.Directory
+                "type" = "Role"
+            }
+            @{
+                "id"   = "e1fe6dd8-ba31-4d61-89e7-88639da4683d" # User.Read
+                "type" = "Scope"
+            }
+        )
+    }
+    # allows the app to redirect to portal.azure.com after consent is granted
+    $Web = @{
+        "RedirectUris" = @("https://portal.azure.com/")
+    }
+    $app = New-MgApplication -DisplayName $AppDisplayName -SignInAudience "AzureADMultipleOrgs" -RequiredResourceAccess @($apiPermission) -Web $Web
+    $null = New-MgServicePrincipal -AppId $app.AppId
+    #return the Application (client) ID
+    $app.AppId
+}
