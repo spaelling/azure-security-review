@@ -3,13 +3,17 @@
 Note that the tenant needs to have Microsoft Entra ID P2 or Microsoft Entra ID Governance license for part of the assessment to work.
 
 # run below if changes has been made to the module
-Remove-Module -Name azure-security-review -Force -ErrorAction SilentlyContinue
+Remove-Module -Name PSAzureSecurityAssessment -Force -ErrorAction SilentlyContinue
 #>
 
 $TranscriptPath = "..\..\entraid_assessments\" + (Get-Date -Format "yyyy_MM_dd_hh_mm") + ".log"
 Start-Transcript -Path $TranscriptPath -Append
 
-Import-Module ".\modules\azure-security-review.psm1" -Force
+<#
+Install-Module -Name 'PSAzureSecurityAssessment' -Force
+#>
+
+Import-Module -Name 'PSAzureSecurityAssessment' -Force
 
 # define which tenants to assess
 $TenantIds = @("1b775964-7849-4f1a-8052-60b8e5c59b96") # demo tenant, faxmeinthecloud
