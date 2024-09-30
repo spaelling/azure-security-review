@@ -1,5 +1,5 @@
 
-Import-Module "$PSScriptRoot\entra-id.psm1"
+Import-Module "$PSScriptRoot\entra-id.psm1" -Force
 
 #region Invoke-AzResourceGraphCheck
 function Invoke-AzResourceGraphCheck {
