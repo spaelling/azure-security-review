@@ -10,7 +10,7 @@ Combined with Markdown, this allows for verbosity to a level that is hard to bea
 
 These are the controls/checks that are implemented, planned, or work in progress.
 
-- Entra ID (Azure AD) [identity.ipynb](./notebooks/identity.ipynb)
+- Entra ID (Azure AD) [entra-id.ipynb](./notebooks/entra-id.ipynb)
   - Users
     - User States
     - Disabled Users
