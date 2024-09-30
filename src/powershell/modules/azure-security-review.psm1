@@ -443,12 +443,13 @@ function Initialize-Notebook {
     [CmdletBinding()]
     param (
         $TenantId = $Global:TenantId,
-        $Scopes = @("Directory.AccessAsUser.All", "Policy.Read.All", "RoleManagement.Read.Directory", "RoleManagementAlert.Read.Directory", "AccessReview.Read.All", "Application.Read.All", "Directory.Read.All", "AuditLog.Read.All", "CrossTenantInformation.ReadBasic.All")
+        $Scopes = @("Directory.AccessAsUser.All", "Policy.Read.All", "RoleManagement.Read.Directory", "RoleManagementAlert.Read.Directory", "AccessReview.Read.All", "Application.Read.All", "Directory.Read.All", "AuditLog.Read.All", "CrossTenantInformation.ReadBasic.All"),
+        [SecureString]$AccessToken = $null
     )
     
     # these scopes are added automatically. To avoid a difference when comparing scopes we add them now
-    $Scopes = $Scopes + @('profile','openid','User.Read','email') | Sort-Object -Unique
-    $TenantId = $Global:TenantId = if($null -eq $TenantId){ Read-Host -Prompt "Enter tenant ID" } else { $TenantId }
+    $Scopes = $Scopes + @('profile', 'openid', 'User.Read', 'email') | Sort-Object -Unique
+    $TenantId = $Global:TenantId = if ($null -eq $TenantId) { Read-Host -Prompt "Enter tenant ID" } else { $TenantId }
 
     # TODO: write a warning if any scope is a write scope
 
@@ -456,15 +457,23 @@ function Initialize-Notebook {
     # This means that 'Microsoft Graph Command Line Tools' must be approved by a Global Administrator
     # use Get-MgContext to check if we need to connect again
     $MgContext = Get-MgContext
-    $AlreadyConnected = $null -eq $MgContext -or $MgContext.TenantId -ne $TenantId -or $null -ne (Compare-Object -ReferenceObject $MgContext.Scopes -DifferenceObject $Scopes)
-    if ($AlreadyConnected) {
-        $null = Connect-MgGraph -Scopes $Scopes -TenantId $TenantId -ContextScope Process -ErrorAction Stop -NoWelcome
+    $NotConnected = $null -ne $AccessToken -or $null -eq $MgContext -or $MgContext.TenantId -ne $TenantId -or $null -ne (Compare-Object -ReferenceObject $MgContext.Scopes -DifferenceObject $Scopes)
+    if ($NotConnected) {
+        if ($null -ne $AccessToken) {
+            Write-Verbose "Connecting to tenant '$TenantId' using provided access token"
+            # cannot define scopes when using access token
+            $null = Connect-MgGraph -AccessToken $AccessToken -ErrorAction Stop -NoWelcome
+        }
+        else {
+            Write-Verbose "Connecting to tenant '$TenantId' with the following scope: $Scopes"
+            $null = Connect-MgGraph -Scopes $Scopes -TenantId $TenantId -ContextScope Process -ErrorAction Stop -NoWelcome
+        }
     }
     else {
         Write-Verbose "Already connected to tenant '$TenantId' with the following scope: $($MgContext.Scopes)"
     }
 
-    Write-Host "Connected to tenant '$TenantId' with the following scope: $Scopes"
+    Write-Verbose "Connected to tenant '$TenantId'"
     $null = Set-AzContext -TenantId $TenantId -ErrorAction Stop -WarningAction SilentlyContinue
 }
 #endregion
