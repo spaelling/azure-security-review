@@ -1,9 +1,576 @@
+
+#region Invoke-AzResourceGraphCheck
+function Invoke-AzResourceGraphCheck {
+    [CmdletBinding()]
+    param (
+        $CheckList,
+        $CheckListId,
+        $DebugMode = $false
+    )
+    $Query = $CheckList | Where-Object { $_.guid -eq $CheckListId } | Select-Object -ExpandProperty graph
+
+    if ($DebugMode) {
+        Write-Host "Running query '$Query'`n"
+    }
+
+    Search-AzGraph $Query | Select-Object -ExpandProperty Data | Where-Object { $_.compliant -eq 0 } | Select-Object -ExpandProperty id
+}
+#endregion
+
+#region Get-GroupMember
+function Get-GroupMember {
+    [CmdletBinding()]
+    param (
+        [array]$DirectoryObjectByIds
+    )
+    $params = @{
+        ids   = $DirectoryObjectByIds
+        types = @(
+            "user"
+            "group"
+        )
+    }
+
+    if ($null -eq $DirectoryObjectByIds -or $DirectoryObjectByIds.Count -eq 0) {
+        return $()
+    }
+
+    $DirectoryObject = Get-MgDirectoryObjectById -BodyParameter $params
+
+    $DirectoryObject | ForEach-Object {
+        $ObjectType = $_.AdditionalProperties.'@odata.type'
+        if ($ObjectType -eq '#microsoft.graph.group') {
+            Get-GroupMember -DirectoryObjectByIds (Get-MgGroupMember -GroupId $_.Id | Select-Object -ExpandProperty Id)
+        }
+        if ($ObjectType -eq '#microsoft.graph.user') {
+            $_
+        }
+    }
+}
+#endregion
+
+#region Get-EntraIdRoleAssignment
+function Get-EntraIdRoleAssignment {
+    [CmdletBinding()]
+    param (
+        [string]$RoleName = $null,
+        [switch]$ExcludeEligebleRoles
+    )
+
+    if ([string]::IsNullOrEmpty($RoleName)) {
+        throw "Must supply a rolename"
+    }
+
+    [array]$Assigned = @()
+    [array]$Eligeble = @()
+
+    # Get the role definition id
+    $DirectoryRoleDefinitionId = Get-MgBetaRoleManagementDirectoryRoleDefinition -Filter "DisplayName eq '$RoleName'" -Property "id" | Select-Object -ExpandProperty Id
+
+    # only get those that are assigned
+    $Filter = "roleDefinitionId eq '$DirectoryRoleDefinitionId' and AssignmentType eq 'Assigned'"
+    [array]$AssignedPrincipals = Get-MgBetaRoleManagementDirectoryRoleAssignmentScheduleInstance -Filter $Filter | Select-Object -ExpandProperty PrincipalId
+    Write-Verbose "Found $($AssignedPrincipals.Count) assigned principals"
+    # recursively get group members
+    $Assigned = Get-GroupMember -DirectoryObjectByIds $AssignedPrincipals | Sort-Object -Unique -Property Id
+    Write-Verbose "Found $($Assigned.Count) assigned user principals"
+    if (-not $ExcludeEligebleRoles.IsPresent) {
+        $Filter = "roleDefinitionId eq '$DirectoryRoleDefinitionId'"
+        # get principals that are eligble for the role
+        [array]$EligeblePrincipals = Get-MgBetaRoleManagementDirectoryRoleEligibilityScheduleInstance -Filter $Filter | Select-Object -ExpandProperty PrincipalId
+        Write-Verbose "Found $($EligeblePrincipals.Count) eligeble principals"
+        # recursively get group members
+        [array]$Eligeble = Get-GroupMember -DirectoryObjectByIds $EligeblePrincipals
+        Write-Verbose "Found $($Assigned.Count) eligeble user principals"
+    }
+    # sort unique to remove duplicates (eligble and assigned)
+    $Assigned + $Eligeble | Sort-Object -Unique -Property Id
+}
+#endregion
+
+#region Get-PrivilegedAdministratorRoleAssignment
+function Get-PrivilegedAdministratorRoleAssignment {
+    [CmdletBinding()]
+    param (
+        $TenantId,
+        $SubscriptionId, # TODO: only using in set-azcontext
+        $ManagementGroupId
+    )
+
+    function Get-GroupMember {
+        [CmdletBinding()]
+        param (
+            [array]$DirectoryObjectByIds
+        )
+        $params = @{
+            ids   = $DirectoryObjectByIds
+            types = @(
+                "user"
+                "group"
+            )
+        }
+
+        if ($null -eq $DirectoryObjectByIds -or $DirectoryObjectByIds.Count -eq 0) {
+            return $()
+        }
+
+        $DirectoryObject = Get-MgDirectoryObjectById -BodyParameter $params
+
+        $DirectoryObject | ForEach-Object {
+            $ObjectType = $_.AdditionalProperties.'@odata.type'
+            if ($ObjectType -eq '#microsoft.graph.group') {
+                Get-GroupMember -DirectoryObjectByIds (Get-MgGroupMember -GroupId $_.Id | Select-Object -ExpandProperty Id)
+            }
+            if ($ObjectType -eq '#microsoft.graph.user') {
+                $_
+            }
+        }  
+    }
+
+    # NOTE: Highly recommend to always use latest version of Microsoft.Graph modules, and uninstall old versions
+    $RequiredModules = 'Az.ResourceGraph', 'Microsoft.Graph.Groups', 'Microsoft.Graph.Users', 'Microsoft.Graph.Authentication'
+    $null = Import-Module -Name $RequiredModules -ErrorAction Stop
+    
+    try {
+        $null = Set-AzContext -TenantId $TenantId -SubscriptionId $SubscriptionId -ErrorAction Stop -WarningAction Stop
+    }
+    catch {
+        $null = Connect-AzAccount -TenantId $TenantId -SubscriptionId $SubscriptionId -UseDeviceAuthentication
+    }
+
+    <# we need to input options and set authorizationScopeFilter to AtScopeAboveAndBelow to get inherited permissions
+    this means we cannot use search-azgraph
+    #>
+
+    function Get-PrivilegedUser {
+        [CmdletBinding()]
+        param (
+            [Parameter(Mandatory)]
+            [ValidateSet('Owner', 'Contributor', 'User Access Administrator')]
+            $Role,
+            [Parameter(Mandatory)]
+            [System.Security.SecureString]
+            $Token,
+            [Parameter(Mandatory)]
+            $ManagementGroupId
+        )
+        $PrivilegedRoles = @{
+            'Owner'                     = '8e3af657-a8ff-443c-a75c-2fe8c4bcb635'
+            'Contributor'               = 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+            'User Access Administrator' = '18d7d88d-d35e-4fb5-a5c3-7773c20a72d9'
+        }
+        $RoleDefId = $PrivilegedRoles[$Role]
+        $Query = @"
+        authorizationResources
+        | where type == 'microsoft.authorization/roleassignments'
+        | extend prop = properties
+        | extend roleDefinitionIdFull = tostring(properties.roleDefinitionId)
+        | extend roleDefinitionIdsplit = split(roleDefinitionIdFull,'/')
+        | extend roleDefinitionId = tostring(roleDefinitionIdsplit[(4)])
+        | extend roleAssignmentPrincipalType = properties.principalType
+        | extend roleAssignmentDescription = properties.description
+        | extend roleAssignmentPrincipalId = properties.principalId
+        | extend roleAssignmentCreatedOn = properties.createdOn
+        | extend roleAssignmentUpdatedOn = properties.updatedOn
+        | extend roleAssignmentUpdatedById = properties.updatedBy
+        | extend roleAssignmentCreatedById = properties.createdBy
+        | extend roleAssignmentScope = properties.scope
+        | project roleDefinitionId,roleAssignmentPrincipalType,roleAssignmentPrincipalId,roleAssignmentCreatedOn,roleAssignmentUpdatedOn,roleAssignmentUpdatedById,roleAssignmentCreatedById,roleAssignmentScope
+        | where roleDefinitionId == '$RoleDefId'
+"@
+
+        $Body = ConvertTo-Json @{
+            managementGroups = @($ManagementGroupId)
+            query            = $Query
+            options          = @{
+                autorizationScopeFilter = "AtScopeAboveAndBelow"
+            }
+        }
+        $Uri = 'https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2022-10-01'
+        $Headers = @{
+        }
+        Write-Verbose "Sending query:`n$Query"
+        $Response = Invoke-RestMethod -Method Post -Uri $Uri -Body $Body -Headers $Headers -Authentication Bearer -Token $Token -ContentType 'application/json'
+        $PrivilegedRBAC = $Response.data  #Search-AzGraph -Query $Query -ManagementGroup $ManagementGroupId -debug
+    
+        [array]$Groups = ($PrivilegedRBAC | Where-Object { $_.roleAssignmentPrincipalType -eq 'Group' }).roleAssignmentPrincipalId | Sort-Object -Unique
+        if ($Groups.Count -gt 0) {
+            $Filter = "Id in ($(($Groups | ForEach-Object { "'$_'" }) -join ','))"
+            $Groups = Get-MgGroup -Filter $Filter
+        }
+        [array]$GroupMembers = Get-GroupMember -DirectoryObjectByIds $Groups.Id | Select-Object -ExpandProperty Id
+
+        [array]$Users = $GroupMembers + ($PrivilegedRBAC | Where-Object { $_.roleAssignmentPrincipalType -eq 'User' }).roleAssignmentPrincipalId | Sort-Object -Unique
+        if ($Users.Count -gt 0) {
+            # TODO: chunks of 15 as this is the max allowed
+            $Users = $Users | Select-Object -First 15
+            $Filter = "Id in ($(($Users | ForEach-Object { "'$_'" }) -join ','))"
+            $Users = Get-MgUser -Filter $Filter
+            $Users | ForEach-Object {
+                # $UserId = $_.Id
+                $_ | Add-Member -MemberType NoteProperty -Name Role -Value $Role -PassThru -Force
+            } |  Select-Object -Property DisplayName, Role
+        }
+    }
+
+    # this will check if already connected, so we can run this multiple times
+    Connect-MgGraph -TenantId $TenantId -UseDeviceCode -Scopes 'User.Read.All', 'Group.Read.All'
+    # $Token = ConvertTo-SecureString -String (Get-AzAccessToken -TenantId $TenantId).Token -Force -AsPlainText
+    $Token = Get-AzAccessToken -TenantId $TenantId -AsSecureString | Select-Object -ExpandProperty Token
+    $GetPrivilegedUsersParams = @{Token = $Token; ManagementGroupId = $ManagementGroupId }
+    Write-Host "Privileged role assignments at '$ManagementGroupId'"
+    
+    Get-PrivilegedUser -Role 'Owner' @GetPrivilegedUsersParams
+    
+    Get-PrivilegedUser -Role 'Contributor' @GetPrivilegedUsersParams
+    
+    Get-PrivilegedUser -Role 'User Access Administrator' @GetPrivilegedUsersParams
+}
+#endregion
+
+#region Measure-IpAddressCount
+function Measure-IpAddressCount {
+    [CmdletBinding()]
+    param (
+        $StartIpAddress,
+        $EndIpAddress
+    )
+    $Ip_Adresa_Od = $StartIpAddress -split "\."
+    $Ip_Adresa_Do = $EndIpAddress -split "\."
+
+    #change endianness
+    [array]::Reverse($Ip_Adresa_Od)
+    [array]::Reverse($Ip_Adresa_Do)
+
+    #convert octets to integer
+    $start = [bitconverter]::ToUInt32([byte[]]$Ip_Adresa_Od, 0)
+    $end = [bitconverter]::ToUInt32([byte[]]$Ip_Adresa_Do, 0)
+
+    # if they are the same, return 1
+    return [System.Math]::Max($end - $start, 1)
+}
+# Measure-IpAddressCount -StartIpAddress '192.168.1.0' -EndIpAddress '192.168.2.0'
+# Measure-IpAddressCount -StartIpAddress '0.0.0.0' -EndIpAddress '255.255.255.255'
+#endregion
+
+#region ConvertTo-Markdown
+# NOTE: this has trouble with properties that are null or empty strings. It will mess with the order of the columns
+# from https://www.powershellgallery.com/packages/PSMarkdown/1.1
+<#
+.Synopsis
+   Converts a PowerShell object to a Markdown table.
+.Description
+   The ConvertTo-Markdown function converts a Powershell Object to a Markdown formatted table
+.EXAMPLE
+   Get-Process | Where-Object {$_.mainWindowTitle} | Select-Object ID, Name, Path, Company | ConvertTo-Markdown
+ 
+   This command gets all the processes that have a main window title, and it displays them in a Markdown table format with the process ID, Name, Path and Company.
+.EXAMPLE
+   ConvertTo-Markdown (Get-Date)
+ 
+   This command converts a date object to Markdown table format
+.EXAMPLE
+   Get-Alias | Select Name, DisplayName | ConvertTo-Markdown
+ 
+   This command displays the name and displayname of all the aliases for the current session in Markdown table format
+#>
+Function ConvertTo-Markdown {
+    [CmdletBinding()]
+    [OutputType([string])]
+    Param (
+        [Parameter(
+            Mandatory = $true,
+            Position = 0,
+            ValueFromPipeline = $true
+        )]
+        [PSObject[]]$InputObject
+    )
+
+    Begin {
+        $items = @()
+        $columns = [ordered]@{}
+    }
+
+    Process {
+        ForEach ($item in $InputObject) {
+            $items += $item
+
+            $item.PSObject.Properties | ForEach-Object {
+                if ($null -ne $_.Value) {
+                    if (-not $columns.Contains($_.Name) -or $columns[$_.Name] -lt $_.Value.ToString().Length) {
+                        $columns[$_.Name] = $_.Value.ToString().Length
+                    }
+                }
+            }
+        }
+    }
+
+    End {
+        ForEach ($key in $($columns.Keys)) {
+            $columns[$key] = [Math]::Max($columns[$key], $key.Length)
+        }
+
+        $header = @()
+        ForEach ($key in $columns.Keys) {
+            $header += ('{0,-' + $columns[$key] + '}') -f $key
+        }
+        $header -join ' | '
+
+        $separator = @()
+        ForEach ($key in $columns.Keys) {
+            $separator += '-' * $columns[$key]
+        }
+        $separator -join ' | '
+
+        ForEach ($item in $items) {
+            $values = @()
+            ForEach ($key in $columns.Keys) {
+                $values += ('{0,-' + $columns[$key] + '}') -f $item.($key)
+            }
+            $values -join ' | '
+        }
+    }
+}
+#endregion
+
+#region Get-DeviceCodeAuthenticationToken
+## get token for main.iam.ad.ext.azure.com
+## https://rozemuller.com/use-internal-azure-api-in-automation/
+function Get-DeviceCodeAuthenticationToken {
+    [CmdletBinding()]
+    param (
+        $tenantId
+    )
+
+    #NOTE: we may be able to just use Get-AzAccessToken -Resource "https://main.iam.ad.ext.azure.com/"
+
+    <# Stopped using this API?
+    AADSTS500011: The resource principal named https://main.iam.ad.ext.azure.com/ was not found in the tenant named <TENANT>. This can happen if the application has not been installed by the administrator of the tenant or consented to by any user in the tenant. You might have sent your authentication request to the wrong tenant.
+    #>
+
+    $clientId = "1950a258-227b-4e31-a9cf-717495945fc2" # This is de Microsoft Azure Powershell application
+    $resource = "https://main.iam.ad.ext.azure.com/"
+    $tokenRequest = $null
+
+    # Send the request to receive a device authentication URL
+    $codeRequest = Invoke-RestMethod -Method POST -UseBasicParsing -Uri "https://login.microsoftonline.com/$tenantId/oauth2/devicecode" -Body "resource=$resource&client_id=$clientId" -Verbose:$false
+    Write-Host "`n$($codeRequest.message)"
+    Read-Host "Press enter to continue (in VS Code enter something random, then enter)"
+
+    # Create the body for the token request, where the device code from the previous request will be used in the call
+    $tokenBody = @{
+        grant_type = "urn:ietf:params:oauth:grant-type:device_code"
+        code       = $codeRequest.device_code
+        client_id  = $clientId
+    }
+
+    # Get OAuth Token
+    while ([string]::IsNullOrEmpty($tokenRequest.access_token)) {
+        # Write-Verbose "`$tokenRequest is empty"
+        $tokenRequest = try {
+            Invoke-RestMethod -Method POST -Uri "https://login.microsoftonline.com/$tenantId/oauth2/token" -Body $tokenBody -Verbose:$false -ErrorAction Stop
+        }
+        catch {
+            $errorMessage = $_.ErrorDetails.Message | ConvertFrom-Json
+            Write-Verbose $errorMessage
+            # If not waiting for auth, throw error
+            if ($errorMessage.error -ne "authorization_pending") {
+                throw "Authorization is pending."
+            }
+            else {
+                Write-Host "Waiting for device code authentication..."
+                Start-Sleep -Seconds 10
+            }
+        }
+    }
+
+    # Printing the relevant information for tracability of the token and code
+    # Write-Output $($tokenRequest | Select-Object -Property token_type, scope, resource, access_token, refresh_token, id_token)
+    $refreshToken = $tokenRequest.refresh_token
+
+    try {
+        $response = (Invoke-RestMethod "https://login.windows.net/$tenantId/oauth2/token" -Method POST -Body "resource=74658136-14ec-4630-ad9b-26e160ff0fc6&grant_type=refresh_token&refresh_token=$refreshToken&client_id=$clientId&scope=openid" -ErrorAction Stop -Verbose:$false)
+    }
+    catch {
+        throw $_
+    }
+    $response.access_token
+}
+#endregion
+
+#region Get-EntraIDApplicationInsight
+function Get-EntraIDApplicationInsight {
+    [CmdletBinding()]
+    param (
+        $appId,
+        $Token
+    )
+
+    # start and end is in Unix time
+    $Date = Get-Date
+    $end = [int](Get-Date $Date -UFormat %s) * 1000
+    $Date = $Date.AddDays(-30) # does not look like we can go further back than 30 days here
+    $start = [int](Get-Date $Date -UFormat %s) * 1000
+
+    # Microsoft Graph PowerShell | Usage & insights
+    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+    $Uri = "https://main.iam.ad.ext.azure.com/api/ApplicationInsights/EnterpriseAppSignIns?appId=$appId&start=$Start&end=$End"
+    $Headers = @{
+        "x-ms-client-session-id" = [GUID]::NewGuid().Guid
+        "x-ms-client-request-id" = [GUID]::NewGuid().Guid
+        "x-ms-command-name"      = "ApplicationManagement - GetEnterpriseAppSignInInsights"
+        "Accept-Language"        = "en"
+        "Authorization"          = "Bearer $Token"
+        "x-ms-effective-locale"  = "en.en-gb"
+        "Accept"                 = "*/*"
+    }
+    $Response = Invoke-WebRequest -UseBasicParsing -Uri $Uri -WebSession $session -Headers $Headers -ContentType "application/json"
+    $response.Content | Convertfrom-Json
+
+    <# looks like we get back data for each day
+for errorNo 0 the activityCount is the number of signins in the last x days
+
+if erroNo is not 0 then it lists signin failures and a reason
+#>
+}
+#endregion
+
+#region Initialize-Notebook
+function Initialize-Notebook {
+    [CmdletBinding()]
+    param (
+        $TenantId = $Global:TenantId,
+        $Scopes = @("Directory.AccessAsUser.All", "Policy.Read.All", "RoleManagement.Read.Directory", "RoleManagementAlert.Read.Directory", "AccessReview.Read.All", "Application.Read.All", "Directory.Read.All", "AuditLog.Read.All", "CrossTenantInformation.ReadBasic.All"),
+        [SecureString]$AccessToken = $null
+    )
+
+    # these scopes are added automatically. To avoid a difference when comparing scopes we add them now
+    $Scopes = $Scopes + @('profile', 'openid', 'User.Read', 'email') | Sort-Object -Unique
+    $TenantId = $Global:TenantId = if ($null -eq $TenantId) { Read-Host -Prompt "Enter tenant ID" } else { $TenantId }
+
+    # TODO: write a warning if any scope is a write scope
+
+    # connect once for all necessary scopes for this notebook - these are delegated permissions so we cannot do something the authenticated user could not already do!
+    # This means that 'Microsoft Graph Command Line Tools' must be approved by a Global Administrator
+    # use Get-MgContext to check if we need to connect again
+    $MgContext = Get-MgContext
+    $NotConnected = $null -ne $AccessToken -or $null -eq $MgContext -or $MgContext.TenantId -ne $TenantId -or $null -ne (Compare-Object -ReferenceObject $MgContext.Scopes -DifferenceObject $Scopes)
+    if ($NotConnected) {
+        if ($null -ne $AccessToken) {
+            Write-Verbose "Connecting to tenant '$TenantId' using provided access token"
+            # cannot define scopes when using access token
+            $null = Connect-MgGraph -AccessToken $AccessToken -ErrorAction Stop -NoWelcome
+        }
+        else {
+            Write-Verbose "Connecting to tenant '$TenantId' with the following scope: $Scopes"
+            $null = Connect-MgGraph -Scopes $Scopes -TenantId $TenantId -ContextScope Process -ErrorAction Stop -NoWelcome
+        }
+    }
+    else {
+        Write-Verbose "Already connected to tenant '$TenantId' with the following scope: $($MgContext.Scopes)"
+    }
+
+    Write-Verbose "Connected to tenant '$TenantId'"
+    $null = Set-AzContext -TenantId $TenantId -ErrorAction Stop -WarningAction SilentlyContinue
+}
+#endregion
+
+<#
+.SYNOPSIS
+Creates a new multi-tenant application in the specified tenant.
+
+.DESCRIPTION
+Creates a new multi-tenant application in the specified tenant. The application will have the application permissions to conduct the Entra ID Security Assessment.
+
+.PARAMETER TenantId
+Specifies the tenant ID of the tenant to create the application in.
+
+.PARAMETER AppDisplayName
+The display name of the application. Default is "Entra ID Security Assessment"
+
+.EXAMPLE
+New-MultiTenantApplication -TenantId 'abcdefg-8c5e-4a10-a32e-523da88a4c99'
+
+.NOTES
+General notes
+#>
+function New-MultiTenantApplication {
+    [CmdletBinding(SupportsShouldProcess)]
+    param (
+        $TenantId,
+        $AppDisplayName = "Entra ID Security Assessment"
+    )
+    Connect-MgGraph -Scopes "Application.ReadWrite.All", "Directory.ReadWrite.All" -TenantId $TenantId -NoWelcome
+
+    $apiPermission = @{
+        "resourceAppId"  = "00000003-0000-0000-c000-000000000000"  # Microsoft Graph
+        "resourceAccess" = @(
+            @{
+                "id"   = "d07a8cc0-3d51-4b77-b3b0-32704d1f69fa" # AccessReview.Read.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "9a5d68dd-52b0-4cc2-bd40-abcf44ac3a30" # Application.Read.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "b0afded3-3588-46d8-8b3d-9842eff778da" # AuditLog.Read.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "cac88765-0581-4025-9725-5ebc13f729ee" # CrossTenantInformation.ReadBasic.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "7ab1d382-f21e-4acd-a863-ba3e13f7da61" # Directory.Read.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "246dd0d5-5bd0-4def-940b-0421030a5b68" # Policy.Read.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "d5fe8ce8-684c-4c83-a52c-46e882ce4be1" # RoleAssignmentSchedule.Read.Directory
+                "type" = "Role"
+            }
+            @{
+                "id"   = "ff278e11-4a33-4d0c-83d2-d01dc58929a5" # RoleEligibilitySchedule.Read.Directory
+                "type" = "Role"
+            }
+            @{
+                "id"   = "c7fbd983-d9aa-4fa7-84b8-17382c103bc4" # RoleManagement.Read.All
+                "type" = "Role"
+            }
+            @{
+                "id"   = "483bed4a-2ad3-4361-a73b-c83ccdbdc53c" # RoleManagement.Read.Directory
+                "type" = "Role"
+            }
+            @{
+                "id"   = "ef31918f-2d50-4755-8943-b8638c0a077e" # RoleManagementAlert.Read.Directory
+                "type" = "Role"
+            }
+            @{
+                "id"   = "e1fe6dd8-ba31-4d61-89e7-88639da4683d" # User.Read
+                "type" = "Scope"
+            }
+        )
+    }
+    # allows the app to redirect to portal.azure.com after consent is granted
+    $Web = @{
+        "RedirectUris" = @("https://portal.azure.com/")
+    }
+    $app = New-MgApplication -DisplayName $AppDisplayName -SignInAudience "AzureADMultipleOrgs" -RequiredResourceAccess @($apiPermission) -Web $Web
+    $null = New-MgServicePrincipal -AppId $app.AppId
+    #return the Application (client) ID
+    $app.AppId
+}
+
 <#
 functions used in the identity notebook.
 #>
 
-#region Get-UserStates
-function Get-UserStates {
+#region Get-UserState
+function Get-UserState {
     [CmdletBinding()]
     param (
         [switch]$OutputToHost,
@@ -37,8 +604,8 @@ function Get-UserStates {
 }
 #endregion
 
-#region Get-DisabledUsers
-function Get-DisabledUsers {
+#region Get-DisabledUser
+function Get-DisabledUser {
     [CmdletBinding()]
     param (
         [switch]$IncludeLicenseDetails,
@@ -84,8 +651,8 @@ function Get-DisabledUsers {
 }
 #endregion
 
-#region Get-GlobalAdminstrators
-function Get-GlobalAdminstrators {
+#region Get-GlobalAdminstrator
+function Get-GlobalAdminstrator {
     [CmdletBinding()]
     param (
         [switch]$OutputMarkdown,
@@ -111,8 +678,8 @@ function Get-GlobalAdminstrators {
 }
 #endregion
 
-#region Get-SynchronizedAccounts
-function Get-SynchronizedAccounts {
+#region Get-SynchronizedAccount
+function Get-SynchronizedAccount {
     [CmdletBinding()]
     param (
         [switch]$OutputMarkdown,
@@ -148,8 +715,8 @@ function Get-SynchronizedAccounts {
 }
 #endregion
 
-#region Get-GroupsWithRoleAssignments
-function Get-GroupsWithRoleAssignments {
+#region Get-GroupsWithRoleAssignment
+function Get-GroupsWithRoleAssignment {
     [CmdletBinding()]
     param (
         [switch]$OutputMarkdown
@@ -161,7 +728,7 @@ function Get-GroupsWithRoleAssignments {
     # Get the directory role id for $RoleName
     $DirectoryRoleId = Get-MgDirectoryRole -Filter "DisplayName eq '$RoleName'" | Select-Object -ExpandProperty Id
     # Get currently assigned
-    $Assigned = Get-MgDirectoryRoleMember -DirectoryRoleId $DirectoryRoleId | Select-Object -ExpandProperty Id
+    $null = Get-MgDirectoryRoleMember -DirectoryRoleId $DirectoryRoleId | Select-Object -ExpandProperty Id
 
     # TODO: $Assigned includes eligeble that have activated the role, but does not provide any details. we need to kow the 'state' and if it is activated we can disregard
 
@@ -190,8 +757,8 @@ function Get-GroupsWithRoleAssignments {
 }
 #endregion
 
-#region Get-PimAlerts
-function Get-PimAlerts {
+#region Get-PimAlert
+function Get-PimAlert {
     [CmdletBinding()]
     param (
         [switch]$OutputMarkdown
@@ -206,8 +773,8 @@ function Get-PimAlerts {
 }
 #endregion
 
-#region Get-PimAlertAffectedPrincipals
-function Get-PimAlertAffectedPrincipals {
+#region Get-PimAlertAffectedPrincipal
+function Get-PimAlertAffectedPrincipal {
     [CmdletBinding()]
     param (
         [switch]$OutputMarkdown
@@ -224,8 +791,8 @@ function Get-PimAlertAffectedPrincipals {
 }
 #endregion
 
-#region Get-RecurringAccessReviews
-function Get-RecurringAccessReviews {
+#region Get-RecurringAccessReview
+function Get-RecurringAccessReview {
     [CmdletBinding()]
     param (
         [switch]$OutputMarkdown
@@ -275,7 +842,7 @@ function Test-AppOwnersChangeGroupMembership {
         '9360feb5-f418-4baa-8175-e2a00bac4301', 'fe930be7-5e62-47db-91af-98c3a49a38b1', '62e90394-69f5-4237-9190-012177145e10'
 
     $Output += Get-MgBetaDirectoryRole -all | Where-Object { $_.RoleTemplateId -in $roles } -pv role | ForEach-Object {
-        Get-MgBetaDirectoryRoleMember -DirectoryRoleId $_.Id | ForEach-Object { $_ | select -expandproperty AdditionalProperties | `
+        Get-MgBetaDirectoryRoleMember -DirectoryRoleId $_.Id | ForEach-Object { $_ | Select-Object -expandproperty AdditionalProperties | `
                 ConvertTo-Json -Depth 5 | ConvertFrom-Json }  | Select-Object displayName, @{N = "via"; Expression = { "Role Member of $($role.displayname)" } }
     } | Select-Object DisplayName, via -Unique
 
@@ -317,8 +884,8 @@ function Test-StandingAccess {
 }
 #endregion
 
-#region Test-GuestInviteSettings
-function Test-GuestInviteSettings {
+#region Test-GuestInviteSetting
+function Test-GuestInviteSetting {
     [CmdletBinding()]
     param (
         [switch]$OutputToHost,
@@ -354,11 +921,10 @@ function Test-GuestInviteSettings {
 }
 #endregion
 
-#region Test-GuestUserAccessRestrictions
-function Test-GuestUserAccessRestrictions {
+#region Test-GuestUserAccessRestriction
+function Test-GuestUserAccessRestriction {
     [CmdletBinding()]
     param (
-        [switch]$OutputToHost,
         [switch]$ShowExplanation
     )
     Write-Verbose "Running command: $($MyInvocation.MyCommand)"
@@ -372,15 +938,15 @@ Compliant External Collaboration Settings: Guest user access set to 'Guest user 
     Write-Warning "Work in progress - not yet implemented"; return
     # TODO: does not say anything about guest user access....
 
-    $ExternalIdentityPolicy = Get-MgBetaPolicyExternalIdentityPolicy #-ExpandProperty "AdditionalProperties"
+    # $ExternalIdentityPolicy = Get-MgBetaPolicyExternalIdentityPolicy #-ExpandProperty "AdditionalProperties"
 
     # $ExternalIdentityPolicy | fl *
     # $ExternalIdentityPolicy.AdditionalProperties | fl *
 }
 #endregion
 
-#region Test-UsersCanRegisterApplications
-function Test-UsersCanRegisterApplications {
+#region Test-UsersCanRegisterApplication
+function Test-UsersCanRegisterApplication {
     [CmdletBinding()]
     param (
         [switch]$OutputToHost,
@@ -420,11 +986,10 @@ Users should not be allowed to register applications. Use specific roles such as
 }
 #endregion
 
-#region Test-AuthenticationMethods
-function Test-AuthenticationMethods {
+#region Test-AuthenticationMethod
+function Test-AuthenticationMethod {
     [CmdletBinding()]
     param (
-        [switch]$OutputToHost,
         [switch]$ShowExplanation
     )
     Write-Verbose "Running command: $($MyInvocation.MyCommand)"
@@ -454,7 +1019,7 @@ function Test-AuthenticationMethods {
     # https://main.iam.ad.ext.azure.com/api/PasswordReset/PasswordResetPolicies?getPasswordResetEnabledGroup=false
     # looks like there is no MG API for this - makes sense when moving to use authentication method policies
     # $Token = ConvertTo-SecureString -Force -AsPlainText (Get-AzAccessToken -TenantId $TenantId -ResourceUrl "https://main.iam.ad.ext.azure.com" | Select-Object -ExpandProperty Token)
-    $Uri = 'https://main.iam.ad.ext.azure.com/api/PasswordReset/PasswordResetPolicies?getPasswordResetEnabledGroup=false'
+    # $Uri = 'https://main.iam.ad.ext.azure.com/api/PasswordReset/PasswordResetPolicies?getPasswordResetEnabledGroup=false'
     # token does not work for this endpoint. inspecting a working token the audience and appid is a guid
     
     # get methods from old MFA portal
@@ -463,8 +1028,8 @@ function Test-AuthenticationMethods {
 }
 #endregion
 
-#region Test-VerifiedDomains
-function Test-VerifiedDomains {
+#region Test-VerifiedDomain
+function Test-VerifiedDomain {
     [CmdletBinding()]
     param (
         [switch]$OutputToHost,
@@ -503,8 +1068,8 @@ Check that only validated customer domains are registered in the tenant.
 }
 #endregion
 
-#region Test-UserConsentForApps
-function Test-UserConsentForApps {
+#region Test-UserConsentForApp
+function Test-UserConsentForApp {
     [CmdletBinding()]
     param (
         [switch]$OutputToHost,
@@ -548,7 +1113,6 @@ Users should only be allowed to consent to apps from verified publishers or not 
 function Test-GroupOwnerConsent {
     [CmdletBinding()]
     param (
-        [switch]$OutputToHost,
         [switch]$ShowExplanation
     )
     $Explanation = @"
@@ -561,8 +1125,8 @@ TODO
 }
 #endregion
 
-#region Find-OwnersFirstPartyMicrosoftApplications
-function Find-OwnersFirstPartyMicrosoftApplications {
+#region Find-OwnersFirstPartyMicrosoftApplication
+function Find-OwnersFirstPartyMicrosoftApplication {
     [CmdletBinding()]
     param (
         [switch]$OutputToHost,
@@ -594,6 +1158,7 @@ Owners of builtin applications can be exploited, see https://dirkjanm.io/azure-a
 #region Find-ApplicationsWithApplicationPermissionsAndOwner
 function Find-ApplicationsWithApplicationPermissionsAndOwner {
     [CmdletBinding()]
+    [OutputType([String])]
     param (
         [switch]$OutputMarkdown,
         [switch]$ShowExplanation
@@ -641,8 +1206,8 @@ function Find-ApplicationsWithApplicationPermissionsAndOwner {
 
 $LowPermissions = @('14dad69e-099b-42c9-810b-d002981feec1', 'e1fe6dd8-ba31-4d61-89e7-88639da4683d', '64a6cdd6-aab1-4aaf-94b8-3cc8405e90d0', '7427e0e9-2fba-42fe-b0c0-848c9e6a8182', '37f7f235-527c-4136-accd-4a02d197296e')
 
-#region Show-LowRiskApplicationPermissions
-function Show-LowRiskApplicationPermissions {
+#region Show-LowRiskApplicationPermission
+function Show-LowRiskApplicationPermission {
     [CmdletBinding()]
     param (
         [switch]$ShowExplanation,
@@ -668,9 +1233,10 @@ These permissions are considered low risk
 }
 #endregion
 
-#region Find-ApplicationsNonLowRiskPermissionsAndOwners
-function Find-ApplicationsNonLowRiskPermissionsAndOwners {
+#region Find-ApplicationsNonLowRiskPermissionsAndOwner
+function Find-ApplicationsNonLowRiskPermissionsAndOwner {
     [CmdletBinding()]
+    [OutputType([String])]
     param (
         [switch]$ShowExplanation,
         [switch]$OutputMarkdown
@@ -725,7 +1291,7 @@ Look for applications with owners and any resource access that we do not conside
 }
 #endregion
 
-#region Get-EntraIdPrivilegedAppRoleAssignments
+#region Get-EntraIdPrivilegedAppRoleAssignment
 ############################################################################################################
 #                                                                                                          #
 #  Powershell script showcasing how to fetch and report on all app role assignments for Microsoft Graph    #
@@ -743,7 +1309,7 @@ Look for applications with owners and any resource access that we do not conside
 
 # asp@apento.com - making into function
 
-function Get-EntraIdPrivilegedAppRoleAssignments {
+function Get-EntraIdPrivilegedAppRoleAssignment {
     [CmdletBinding()]
     param (
         
@@ -883,8 +1449,8 @@ function Get-EntraIdPrivilegedAppRoleAssignments {
 }
 #endregion
 
-#region Get-PrivilegedAppRoleAssignments
-function Get-PrivilegedAppRoleAssignments {
+#region Get-PrivilegedAppRoleAssignment
+function Get-PrivilegedAppRoleAssignment {
     [CmdletBinding()]
     param (
         [switch]$ShowExplanation,
@@ -898,7 +1464,7 @@ function Get-PrivilegedAppRoleAssignments {
     if ($ShowExplanation.IsPresent) {
         Write-Host $Explanation
     }
-    $Output = Get-EntraIdPrivilegedAppRoleAssignments -ErrorAction SilentlyContinue -Verbose:$false
+    $Output = Get-EntraIdPrivilegedAppRoleAssignment -ErrorAction SilentlyContinue -Verbose:$false
     # lots of properties. We need to reduce to make it fit in Markdown
     if ($OutputMarkdown.IsPresent) { $Output | Select-Object -Property @{ Name = 'Tier 0'; Expression = { $_.AppRoleTier -like "*Tier 0*" ? "Y" : "N" } }, @{ Name = 'AppRole'; Expression = { "$($_.AppRole) ($($_.AppRoleName))" } }, LastSignInActivity, ServicePrincipalDisplayName | ConvertTo-Markdown } else { $Output | Format-Table -AutoSize }
 }
@@ -930,8 +1496,8 @@ function Test-ConditionalAccessPolicy {
         # $BlockLegacyProtocolPolicy | Select-Object -Property DisplayName, Id
 
         $ExcludeUsers = $BlockLegacyProtocolPolicy.Conditions.Users.ExcludeUsers
-        $ExcludeGroups = $BlockLegacyProtocolPolicy.Conditions.Users.ExcludeGroups
-        $ExcludeGuestsOrExternalUsers = $BlockLegacyProtocolPolicy.Conditions.Users.ExcludeGuestsOrExternalUsers
+        # $ExcludeGroups = $BlockLegacyProtocolPolicy.Conditions.Users.ExcludeGroups
+        # $ExcludeGuestsOrExternalUsers = $BlockLegacyProtocolPolicy.Conditions.Users.ExcludeGuestsOrExternalUsers
 
         # TODO:
         # $ExcludeGroups
@@ -955,8 +1521,8 @@ function Test-ConditionalAccessPolicy {
         # $RequireMfaAdminsPolicy | Select-Object -Property DisplayName, Id
 
         $ExcludeUsers = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeUsers
-        $ExcludeGroups = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeGroups
-        $ExcludeGuestsOrExternalUsers = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeGuestsOrExternalUsers
+        # $ExcludeGroups = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeGroups
+        # $ExcludeGuestsOrExternalUsers = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeGuestsOrExternalUsers
 
         # TODO:
         # $ExcludeGroups
@@ -983,8 +1549,8 @@ function Test-ConditionalAccessPolicy {
         # $RequireMfaAdminsPolicy | Select-Object -Property DisplayName, Id
 
         $ExcludeUsers = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeUsers
-        $ExcludeGroups = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeGroups
-        $ExcludeGuestsOrExternalUsers = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeGuestsOrExternalUsers
+        # $ExcludeGroups = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeGroups
+        # $ExcludeGuestsOrExternalUsers = $RequireMfaAdminsPolicy.Conditions.Users.ExcludeGuestsOrExternalUsers
 
         # TODO:
         # $ExcludeGroups
@@ -1028,8 +1594,8 @@ function Test-ConditionalAccessPolicy {
         # $CompliantDevicePolicy | Select-Object -Property DisplayName, Id
 
         $ExcludeUsers = $CompliantDevicePolicy.Conditions.Users.ExcludeUsers
-        $ExcludeGroups = $CompliantDevicePolicy.Conditions.Users.ExcludeGroups
-        $ExcludeGuestsOrExternalUsers = $CompliantDevicePolicy.Conditions.Users.ExcludeGuestsOrExternalUsers
+        # $ExcludeGroups = $CompliantDevicePolicy.Conditions.Users.ExcludeGroups
+        # $ExcludeGuestsOrExternalUsers = $CompliantDevicePolicy.Conditions.Users.ExcludeGuestsOrExternalUsers
 
         # TODO:
         # $ExcludeGroups
@@ -1073,8 +1639,8 @@ function Test-ConditionalAccessPolicy {
 }
 #endregion
 
-#region Test-ProtectedActions
-function Test-ProtectedActions {
+#region Test-ProtectedAction
+function Test-ProtectedAction {
     [CmdletBinding()]
     param (
         [switch]$ShowExplanation
@@ -1141,7 +1707,7 @@ function Write-EntraIdAssessment {
 
 Count the total number of users, disabled users, deleted users, and guest users.
 
-$((Get-UserStates -OutputMarkdown) -join "`n")
+$((Get-UserState -OutputMarkdown) -join "`n")
 
 ### Disabled Users
 
@@ -1149,9 +1715,9 @@ Find disabled users with group memberships or roles or licenses assigned.
 
 Disabled users should not have roles or licenses assigned, and group memberships should at least be reviewed. 
 
-$((Get-DisabledUsers -IncludeLicenseDetails -OutputMarkdown) -join "`n")
+$((Get-DisabledUser -IncludeLicenseDetails -OutputMarkdown) -join "`n")
 
-$((Get-DisabledUsers -IncludeGroupMemberships -OutputMarkdown) -join "`n")
+$((Get-DisabledUser -IncludeGroupMemberships -OutputMarkdown) -join "`n")
 
 ## Privileged Administration
 
@@ -1167,7 +1733,7 @@ $((Get-DisabledUsers -IncludeGroupMemberships -OutputMarkdown) -join "`n")
 
 Global Administrators:
 
-$((Get-GlobalAdminstrators -OutputMarkdown) -join "`n")
+$((Get-GlobalAdminstrator -OutputMarkdown) -join "`n")
 
 ### Synchronized accounts
 
@@ -1183,7 +1749,7 @@ If below list any users then `onPremisesSyncEnabled` is true (and their account 
 
 *Do not synchronize accounts to Azure AD that have high privileges in your existing Active Directory instance...*
 
-$((Get-SynchronizedAccounts -OutputMarkdown) -join "`n")
+$((Get-SynchronizedAccount -OutputMarkdown) -join "`n")
 
 ### Use groups for Entra ID role assignments
 
@@ -1199,7 +1765,7 @@ For now we can check the *Membership* column in [Privileged Identity Management 
 
 *If you have an external governance system that takes advantage of groups, then you should consider assigning roles to Microsoft Entra groups, instead of individual users....*
 
-<!-- Get-GroupsWithRoleAssignments -OutputMarkdown # WiP -->
+<!-- Get-GroupsWithRoleAssignment -OutputMarkdown # WiP -->
 
 ### PIM Alerts
 
@@ -1209,11 +1775,11 @@ For now we can check the *Membership* column in [Privileged Identity Management 
 
 There should be no active alerts in PIM. If below identifies any active alerts go to [PIM alerts](https://portal.azure.com/#view/Microsoft_Azure_PIMCommon/ResourceMenuBlade/~/Alerts/resourceId//resourceType/tenant/provider/aadroles) for further details.
 
-$((Get-PimAlerts -OutputMarkdown) -join "`n")
+$((Get-PimAlert -OutputMarkdown) -join "`n")
 
 We can also list affected principals. Note that in some cases there is no direct principal, ex. for the alert `NoMfaOnRoleActivationAlert`
 
-$((Get-PimAlertAffectedPrincipals -OutputMarkdown) -join "`n")
+$((Get-PimAlertAffectedPrincipal -OutputMarkdown) -join "`n")
 
 ### Recurring access reviews
 
@@ -1227,7 +1793,7 @@ Configure recurring access reviews to revoke unneeded permissions over time.
 
 If there are no access review definitions then there are no recurring access reviews.
 
-$((Get-RecurringAccessReviews -OutputMarkdown) -join "`n")
+$((Get-RecurringAccessReview -OutputMarkdown) -join "`n")
 
 ### Access Reviews: Enabled for all groups
 
@@ -1271,7 +1837,7 @@ $((Test-StandingAccess -OutputMarkdown) -join "`n")
 
 External Collaboration Settings: Guest invite settings set to `'Only users assigned to specific admin roles can invite guest users'` or `'No one in the organization can invite guest users including admins (most restrictive)'`
 
-$((Test-GuestInviteSettings -OutputMarkdown) -join "`n")
+$((Test-GuestInviteSetting -OutputMarkdown) -join "`n")
 
 ### Guest user access restrictions
 
@@ -1297,7 +1863,7 @@ Users can register applications should be set to `No`.
 
 Users should not be allowed to register applications. Use specific roles such as `Application Developer`.
 
-$((Test-UsersCanRegisterApplications -OutputMarkdown) -join "`n")
+$((Test-UsersCanRegisterApplication -OutputMarkdown) -join "`n")
 
 ### Authentication Methods
 
@@ -1319,7 +1885,7 @@ check if migration has already been done, and if not, can we check if the method
 
 Only validated customer domains are registered
 
-$((Test-VerifiedDomains -OutputMarkdown) -join "`n")
+$((Test-VerifiedDomain -OutputMarkdown) -join "`n")
 
 ## Enterprise Applications
 
@@ -1333,7 +1899,7 @@ Consent & Permissions: Allow user consent for apps from verified publishers
 
 [Configure how users consent to applications](https://learn.microsoft.com/en-us/azure/active-directory/manage-apps/configure-user-consent?pivots=ms-graph)
 
-$((Test-UserConsentForApps -OutputMarkdown) -join "`n")
+$((Test-UserConsentForApp -OutputMarkdown) -join "`n")
 
 ###  Group Owner Consent
 
@@ -1363,7 +1929,7 @@ Read here how these can be exploited: [Azure AD privilege escalation - Taking ov
 
 Below code snippets look for various applications that are at an increased risk from having owners. 
 
-$((Find-OwnersFirstPartyMicrosoftApplications -OutputMarkdown) -join "`n")
+$((Find-OwnersFirstPartyMicrosoftApplication -OutputMarkdown) -join "`n")
 
 Look for applications with application permission in Microsoft Graph and 1 or more owners assigned. Application permissions are often medium-high risk permissions.
 
@@ -1373,17 +1939,17 @@ Look for applications with owners and any resource access that we do not conside
 
 These permissions are considered low risk:
 
-$((Show-LowRiskApplicationPermissions -OutputMarkdown) -join "`n")
+$((Show-LowRiskApplicationPermission -OutputMarkdown) -join "`n")
 
 Look for applications with owners and any resource access that we do not consider low-risk. 
 
-$((Find-ApplicationsNonLowRiskPermissionsAndOwners -OutputMarkdown) -join "`n")
+$((Find-ApplicationsNonLowRiskPermissionsAndOwner -OutputMarkdown) -join "`n")
 
 ### Applications with privileged app role assignments
 
 All credit goes to [What's lurking in your Microsoft Graph app role assignments?](https://learningbydoing.cloud/blog/audit-ms-graph-app-role-assignments/)
 
-$((Get-PrivilegedAppRoleAssignments -OutputMarkdown) -join "`n")
+$((Get-PrivilegedAppRoleAssignment -OutputMarkdown) -join "`n")
 
 ## Conditional Access Policies
 
@@ -1453,7 +2019,7 @@ $((Test-ConditionalAccessPolicy -DeviceCompliance -OutputMarkdown) -join "`n")
 
 Use [Protected Actions](https://learn.microsoft.com/en-us/azure/active-directory/roles/protected-actions-overview) to enforce strong authentcation and other strict grant controls when performing highly privileged actions, like `Delete conditional access policies`.
 
-$((Test-ProtectedActions) -join "`n")
+$((Test-ProtectedAction) -join "`n")
 "@
     #endregion
 
