@@ -9,6 +9,7 @@ function Get-UserStates {
         [switch]$OutputToHost,
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
 
     $TotalUsers = (Get-MgUser -All -Property Id).Count
     $Filter = "accountEnabled eq false"
@@ -44,6 +45,7 @@ function Get-DisabledUsers {
         [switch]$IncludeGroupMemberships,
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
 
     $Filter = "accountEnabled eq false and userType eq 'Member'"
     $DisabledUsers = Get-MgUser -All -Filter $Filter -ErrorAction Stop
@@ -89,6 +91,8 @@ function Get-GlobalAdminstrators {
         [switch]$OutputMarkdown,
         [switch]$OutputToHost
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $Setting = Get-EntraIdRoleAssignment -RoleName "Global Administrator"
     $Compliant = $Setting.Count -lt 5
 
@@ -114,6 +118,8 @@ function Get-SynchronizedAccounts {
         [switch]$OutputMarkdown,
         [switch]$ShowProgress
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $PrivilegedRolesList = @('62e90394-69f5-4237-9190-012177145e10', '194ae4cb-b126-40b2-bd5b-6091b380977d', 'f28a1f50-f6e7-4571-818b-6a12f2af6b6c', '29232cdf-9323-42fd-ade2-1d097af3e4de', 'b1be1c3e-b65d-4f19-8427-f6fa0d97feb9', '729827e3-9c14-49f7-bb1b-9608f156bbb8', 'b0f54661-2d74-4c50-afa3-1ec803f12efe', 'fe930be7-5e62-47db-91af-98c3a49a38b1', 'c4e39bd9-1100-46d3-8c65-fb160da0071f', '9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3', '158c047a-c907-4556-b7ef-446551a6b5f7', '966707d0-3269-4727-9be2-8c3a10f19b9d', '7be44c8a-adaf-4e2a-84d6-ab2649e08a13', 'e8611ab8-c189-46e8-94e1-60213ab1f814')
 
     # check if there is any synchronized accounts at all
@@ -148,6 +154,8 @@ function Get-GroupsWithRoleAssignments {
     param (
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $RoleName = "Global Administrator"
 
     # Get the directory role id for $RoleName
@@ -188,6 +196,8 @@ function Get-PimAlerts {
     param (
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $GovernanceRoleManagementAlerts = Get-MgBetaIdentityGovernanceRoleManagementAlert -Filter "scopeId eq '/' and scopeType eq 'DirectoryRole' and isActive eq true" -ExpandProperty "alertDefinition,alertConfiguration,alertIncidents"
 
     $Output = $GovernanceRoleManagementAlerts | Select-Object -Property @{ Name = 'Alert'; Expression = { $_.alertDefinition.displayName } }, @{ Name = 'Incident Count'; Expression = { $_.IncidentCount } }
@@ -202,6 +212,8 @@ function Get-PimAlertAffectedPrincipals {
     param (
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $GovernanceRoleManagementAlerts = Get-MgBetaIdentityGovernanceRoleManagementAlert -Filter "scopeId eq '/' and scopeType eq 'DirectoryRole' and isActive eq true" -ExpandProperty "alertDefinition,alertConfiguration,alertIncidents"
 
     $Output = $GovernanceRoleManagementAlerts.alertIncidents.AdditionalProperties | Where-Object { $_.assigneeUserPrincipalName } | ForEach-Object {
@@ -218,6 +230,8 @@ function Get-RecurringAccessReviews {
     param (
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $AccessReviewDefinitions = Get-MgBetaIdentityGovernanceAccessReviewDefinition
 
     $Output = [pscustomobject] @{"Access review definitions" = $(($AccessReviewDefinitions | Measure-Object).Count) }
@@ -231,6 +245,8 @@ function Test-AppOwnersChangeGroupMembership {
     param (
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     #get the graph id
     $Graph = Get-MgBetaServicePrincipal -filter "appId eq '00000003-0000-0000-c000-000000000000'" -ErrorAction Stop
     #get the permission IDs
@@ -278,6 +294,8 @@ function Test-StandingAccess {
         [switch]$OutputMarkdown,
         [switch]$ShowProgress
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     # get permanent assignments of privileged Entra ID roles
 
     $PrivilegedRolesList = @('62e90394-69f5-4237-9190-012177145e10', '194ae4cb-b126-40b2-bd5b-6091b380977d', 'f28a1f50-f6e7-4571-818b-6a12f2af6b6c', '29232cdf-9323-42fd-ade2-1d097af3e4de', 'b1be1c3e-b65d-4f19-8427-f6fa0d97feb9', '729827e3-9c14-49f7-bb1b-9608f156bbb8', 'b0f54661-2d74-4c50-afa3-1ec803f12efe', 'fe930be7-5e62-47db-91af-98c3a49a38b1', 'c4e39bd9-1100-46d3-8c65-fb160da0071f', '9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3', '158c047a-c907-4556-b7ef-446551a6b5f7', '966707d0-3269-4727-9be2-8c3a10f19b9d', '7be44c8a-adaf-4e2a-84d6-ab2649e08a13', 'e8611ab8-c189-46e8-94e1-60213ab1f814')
@@ -307,6 +325,8 @@ function Test-GuestInviteSettings {
         [switch]$ShowExplanation,
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $AuthorizationPolicy = Get-MgPolicyAuthorizationPolicy
 
     $Setting = $AuthorizationPolicy.AllowInvitesFrom
@@ -341,6 +361,8 @@ function Test-GuestUserAccessRestrictions {
         [switch]$OutputToHost,
         [switch]$ShowExplanation
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $Explanation = @"
 Compliant External Collaboration Settings: Guest user access set to 'Guest user access is restricted to properties and memberships of their own directory objects (most restrictive)'
 "@
@@ -365,6 +387,8 @@ function Test-UsersCanRegisterApplications {
         [switch]$ShowExplanation,
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $Explanation = @"
 Users can register applications should be set to `No`.
 
@@ -403,6 +427,8 @@ function Test-AuthenticationMethods {
         [switch]$OutputToHost,
         [switch]$ShowExplanation
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $Explanation = @"
     
 "@
@@ -445,6 +471,8 @@ function Test-VerifiedDomains {
         [switch]$ShowExplanation,
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $Explanation = @"
 Check that only validated customer domains are registered in the tenant.
 "@
@@ -483,6 +511,8 @@ function Test-UserConsentForApps {
         [switch]$ShowExplanation,
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $Explanation = @"
 Users should only be allowed to consent to apps from verified publishers or not consent at all. Allowing users to consent to any application is a security risk.
 "@
@@ -539,6 +569,8 @@ function Find-OwnersFirstPartyMicrosoftApplications {
         [switch]$ShowExplanation,
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $Explanation = @"
 Owners of builtin applications can be exploited, see https://dirkjanm.io/azure-ad-privilege-escalation-application-admin/
 "@
@@ -566,6 +598,8 @@ function Find-ApplicationsWithApplicationPermissionsAndOwner {
         [switch]$OutputMarkdown,
         [switch]$ShowExplanation
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $Explanation = @"
 
 "@
@@ -614,6 +648,8 @@ function Show-LowRiskApplicationPermissions {
         [switch]$ShowExplanation,
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $Explanation = @"
 These permissions are considered low risk
 "@
@@ -639,6 +675,8 @@ function Find-ApplicationsNonLowRiskPermissionsAndOwners {
         [switch]$ShowExplanation,
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $Explanation = @"
 Look for applications with owners and any resource access that we do not consider low-risk. 
 "@
@@ -852,13 +890,15 @@ function Get-PrivilegedAppRoleAssignments {
         [switch]$ShowExplanation,
         [switch]$OutputMarkdown
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $Explanation = @"
 
 "@
     if ($ShowExplanation.IsPresent) {
         Write-Host $Explanation
     }
-    $Output = Get-EntraIdPrivilegedAppRoleAssignments -ErrorAction SilentlyContinue
+    $Output = Get-EntraIdPrivilegedAppRoleAssignments -ErrorAction SilentlyContinue -Verbose:$false
     # lots of properties. We need to reduce to make it fit in Markdown
     if ($OutputMarkdown.IsPresent) { $Output | Select-Object -Property @{ Name = 'Tier 0'; Expression = { $_.AppRoleTier -like "*Tier 0*" ? "Y" : "N" } }, @{ Name = 'AppRole'; Expression = { "$($_.AppRole) ($($_.AppRoleName))" } }, LastSignInActivity, ServicePrincipalDisplayName | ConvertTo-Markdown } else { $Output | Format-Table -AutoSize }
 }
@@ -875,6 +915,7 @@ function Test-ConditionalAccessPolicy {
         [parameter(ParameterSetName = "RestrictedLocations")][switch]$RestrictedLocations,
         [parameter(ParameterSetName = "DeviceCompliance")][switch]$DeviceCompliance
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
 
     $CompliantText = ''
     $NonCompliantText = 'No valid CA Policy found'
@@ -1038,6 +1079,8 @@ function Test-ProtectedActions {
     param (
         [switch]$ShowExplanation
     )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
     $Explanation = @"
 
 "@
@@ -1079,13 +1122,12 @@ function Test-ProtectedActions {
 This is the pure powershell based Entra ID assessment. It will strongly correlate to the experience in entra-id.ipynb (Notebook)
 #>
 function Write-EntraIdAssessment {
+    [CmdletBinding()]
     param(
         [string]$TenantId = "1b775964-7849-4f1a-8052-60b8e5c59b96",
         [string]$OutputFolder = ".\",
         [SecureString]$AccessToken = $null
     )
-
-    $ErrorActionPreference = "Stop"
 
     Initialize-Notebook -TenantId $TenantId -AccessToken $AccessToken   
 
@@ -1415,6 +1457,7 @@ $((Test-ProtectedActions) -join "`n")
 "@
     #endregion
 
-    $Markdown | Out-File -FilePath "$OutputFolder\entra-id-$TenantId.md"
+    $FilePath = "$OutputFolder\entra-id-$TenantId.md"
+    $Markdown | Out-File -FilePath $FilePath
 }
 #endregion
