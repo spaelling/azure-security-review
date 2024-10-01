@@ -8,7 +8,7 @@ Remove-Module -Name PSAzureSecurityAssessment -Force -ErrorAction SilentlyContin
 
 param(
     $TranscriptPath = "./transcripts",
-    $OutputFolder = "./src/entraid_assessments",
+    $OutputFolder = "./entraid_assessments",
     $TenantIds= @("1b775964-7849-4f1a-8052-60b8e5c59b96"),
     $StorageAccountName = 'sa6a6e37fa52624205977',
     $StorageAccountTenantId = '690e25b4-8c5e-4a10-a32e-523da88a4c99',
@@ -62,7 +62,13 @@ $OutputFolder = (Resolve-Path $OutputFolder).Path
 # TODO: run commands asynchronously so that we can generate the markdown output much faster - may hit some rate limiting?
 $TenantId = $TenantIds[0]
 foreach ($TenantId in $TenantIds) {
-    # must authenticate using a service principal that has the following application permissions "RoleEligibilitySchedule.Read.Directory", "RoleAssignmentSchedule.Read.Directory", "Directory.AccessAsUser.All", "Policy.Read.All", "RoleManagement.Read.Directory", "RoleManagementAlert.Read.Directory", "AccessReview.Read.All", "Application.Read.All", "Directory.Read.All", "AuditLog.Read.All", "CrossTenantInformation.ReadBasic.All"
+    <# must authenticate using a service principal that has the following application permissions "RoleEligibilitySchedule.Read.Directory", "RoleAssignmentSchedule.Read.Directory", "Directory.AccessAsUser.All", "Policy.Read.All", "RoleManagement.Read.Directory", "RoleManagementAlert.Read.Directory", "AccessReview.Read.All", "Application.Read.All", "Directory.Read.All", "AuditLog.Read.All", "CrossTenantInformation.ReadBasic.All"
+    for the entra id diagnostic settings run either of these using an account that has enabled "Access management for Azure resources" in Entra ID properties (requires Global Administrator)
+    easiest way to do this is to run it from a cloud shell
+
+    New-AzRoleAssignment -ObjectId "<enterprise application object id>" -Scope "/providers/Microsoft.aadiam" -RoleDefinitionName 'Contributor' -ObjectType 'ServicePrincipal'
+    az role assignment create --assignee-principal-type  ServicePrincipal --assignee-object-id '<enterprise application object id>' --scope "/providers/Microsoft.aadiam" --role 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+    #>
     if($null -ne $ApplicationId)
     {
         $Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $ApplicationId, $SecurePassword
