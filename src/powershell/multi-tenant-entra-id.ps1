@@ -36,10 +36,10 @@ $null = Import-Module ./src/powershell/modules/PSAzureSecurityAssessment/PSAzure
 if($InstallMicrosoftGraphModules.IsPresent)
 {
     $MGModuleNames = 'Microsoft.Graph.Identity.DirectoryManagement', 'Microsoft.Graph.Authentication', 'Microsoft.Graph.Identity.SignIns', 'Microsoft.Graph.Groups', 'Microsoft.Graph.DirectoryObjects', 'Microsoft.Graph.Users', 'Microsoft.Graph.Applications'
-    $MGModuleNames | % {Install-Module -Name $_ -Scope CurrentUser -Force -Verbose}
+    $MGModuleNames | % {Install-Module -Name $_ -Scope CurrentUser -Force}
     # beta modules
     $MGModuleNames = 'Microsoft.Graph.Beta.Identity.SignIns', 'Microsoft.Graph.Beta.Identity.Governance', 'Microsoft.Graph.Beta.Applications', 'Microsoft.Graph.Beta.Identity.DirectoryManagement', 'Microsoft.Graph.Beta.DirectoryObjects', 'Microsoft.Graph.Beta.Reports'
-    $MGModuleNames | % {Install-Module -Name $_ -Scope CurrentUser -Force -Verbose -AllowClobber}
+    $MGModuleNames | % {Install-Module -Name $_ -Scope CurrentUser -Force -AllowClobber}
 }
 
 <#
