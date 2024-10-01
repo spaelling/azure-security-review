@@ -25,12 +25,15 @@ $TranscriptPath = $TranscriptPath + "/" + (Get-Date -Format "yyyy_MM_dd_hh_mm") 
 Start-Transcript -Path $TranscriptPath
 
 # install powershell module PSAzureSecurityAssessment if not already installed
-if ($null -eq (Get-Module -ListAvailable -Name PSAzureSecurityAssessment)) {
+# check latest version of PSAzureSecurityAssessment
+$PSAzureSecurityAssessmentLatestVersion = Find-Module -Name PSAzureSecurityAssessment -Repository PSGallery -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Version
+$InstalledLatestVersion = $null -ne (Get-Module -ListAvailable -Name PSAzureSecurityAssessment -ErrorAction SilentlyContinue | Where-Object { $_.Version -eq $PSAzureSecurityAssessmentLatestVersion })
+if (-not $InstalledLatestVersion) {
     Install-Module -Name PSAzureSecurityAssessment -Force -AllowClobber -Scope CurrentUser
 }
 
-# $null = Import-Module -Name PSAzureSecurityAssessment -ErrorAction Stop -Force
-$null = Import-Module ./src/powershell/modules/PSAzureSecurityAssessment/PSAzureSecurityAssessment.psd1 -Force
+$null = Import-Module -Name PSAzureSecurityAssessment -ErrorAction Stop -Force
+# $null = Import-Module ./src/powershell/modules/PSAzureSecurityAssessment/PSAzureSecurityAssessment.psd1 -Force
 
 # install Microsoft Graph modules
 if($InstallMicrosoftGraphModules.IsPresent)
