@@ -1683,6 +1683,70 @@ function Test-ProtectedAction {
 }
 #endregion
 
+#region Test-EntraIdDiagnosticSetting
+<#
+run either of these using an account that has enabled "Access management for Azure resources" in Entra ID properties (requires Global Administrator)
+easiest way to do this is to run it from a cloud shell
+
+New-AzRoleAssignment -ObjectId "<enterprise application object id>" -Scope "/providers/Microsoft.aadiam" -RoleDefinitionName 'Contributor' -ObjectType 'ServicePrincipal'
+az role assignment create --assignee-principal-type  ServicePrincipal --assignee-object-id '<enterprise application object id>' --scope "/providers/Microsoft.aadiam" --role 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+#>
+function Test-EntraIdDiagnosticSetting {
+    [CmdletBinding()]
+    param (
+        [switch]$ShowExplanation,
+        [switch]$OutputMarkdown
+    )
+    Write-Verbose "Running command: $($MyInvocation.MyCommand)"
+
+    $Explanation = @"
+Entra ID should export diagnostic logs to a Log Analytics workspace. This is a best practice to ensure that you can monitor and alert on the logs.
+"@
+    if ($ShowExplanation.IsPresent) {
+        Write-Host $Explanation
+    }
+
+    # Retrieve all diagnostic settings from Entra ID #
+
+    # looks to be no builtin cmdlet for this, so we need to use the REST API
+
+    # Generate an access token for the management API
+    $accessToken = (Get-AzAccessToken -ResourceUrl "https://management.azure.com" -TenantId $Global:TenantId -AsSecureString -WarningAction SilentlyContinue).Token
+    
+    # $accessToken = (Get-AzAccessToken -ResourceUrl "https://management.azure.com" -TenantId '690e25b4-8c5e-4a10-a32e-523da88a4c99' -AsSecureString -WarningAction SilentlyContinue).Token
+
+    # Set the API endpoint 
+    $apiEndpoint = "https://management.azure.com/providers/microsoft.aadiam/diagnosticSettings?api-version=2017-04-01-preview"
+    
+    # Set the headers for the API call
+    $headers = @{
+        "Authorization" = "Bearer $(ConvertFrom-SecureString $accessToken -AsPlainText)"
+        "Content-Type" = "application/json"
+    }
+
+    try {
+        $response = Invoke-RestMethod -Uri $apiEndpoint -Headers $headers -Method Get -ErrorAction Stop        
+    }
+    catch {
+        Write-Warning "Failed to retrieve diagnostic settings from Entra ID. Be sure to have granted the necessary permissions to the service principal"
+    }
+
+    $diagnosticSettings = $response.value
+    foreach ($diagnosticSetting in $diagnosticSettings) {        
+        $properties = ($diagnosticSetting | Select-Object -Property name, properties).properties
+        $logs = $properties.logs
+        $Output = [PSCustomObject][Ordered]@{
+            "Diagnostics settings name"         = $diagnosticSetting.name
+            "Exporting to workspace" = $null -ne $properties.workspaceId
+            "Exporting audit logs" = $logs | Where-Object { $_.category -eq 'AuditLogs' } | Select-Object -ExpandProperty enabled
+            "Exporting Signin logs" = $logs | Where-Object { $_.category -eq 'SignInLogs' } | Select-Object -ExpandProperty enabled
+        }
+
+        if ($OutputMarkdown) { $Output | ConvertTo-Markdown } else { $Output | Format-Table -AutoSize }
+    }
+}
+#endregion
+
 #region Write-EntraIdAssessment
 <#
 This is the pure powershell based Entra ID assessment. It will strongly correlate to the experience in entra-id.ipynb (Notebook)
@@ -2023,19 +2087,31 @@ $((Test-ConditionalAccessPolicy -DeviceCompliance -OutputMarkdown) -join "`n")
 Use [Protected Actions](https://learn.microsoft.com/en-us/azure/active-directory/roles/protected-actions-overview) to enforce strong authentcation and other strict grant controls when performing highly privileged actions, like `Delete conditional access policies`.
 
 $((Test-ProtectedAction) -join "`n")
+
+## Entra ID Diagnostic Settings
+
+Entra ID should export diagnostic logs to a Log Analytics workspace. This is a best practice to ensure that you can monitor and alert on the logs.
+
+The most important logs to export are audit and signin logs. These should be considered bare minimum, but only export logs that you will use.
+
+Below does not reflect logs exported to Event hub (common for SIEM) or storage account (common for long-term storage).
+
+$((Test-EntraIdDiagnosticSetting -OutputMarkdown) -join "`n")
 "@
     #endregion
 
     $FileName = "entra-id-$TenantId.md"
     $FilePath = "$OutputFolder\$FileName"
     $Markdown | Out-File -FilePath $FilePath
+    Write-Verbose "Saved to $FilePath"
 
     # upload to Azure Blob Storage
     if ($null -ne $StorageAccountName -and $null -ne $StorageAccountTenantId) {
-        # switch to the storage account tenant
-        $null = Set-AzContext -TenantId $StorageAccountTenantId
         # Blob name is the same as the file name
         $BlobName = $FileName
+        Write-Verbose "Uploading to Azure Blob Storage: $StorageAccountName/$ContainerName/$BlobName"
+        # switch to the storage account tenant
+        $null = Set-AzContext -TenantId $StorageAccountTenantId
         # create storage context with OAuth (Microsoft Entra ID) Authentication
         $StorageContext = New-AzStorageContext -StorageAccountName $StorageAccountName -UseConnectedAccount -ErrorAction Stop
         # create container if not exist
@@ -2044,7 +2120,8 @@ $((Test-ProtectedAction) -join "`n")
             $Container = New-AzStorageContainer -Name $ContainerName -Context $StorageContext
         }
         # upload file
-        $null = Set-AzStorageBlobContent -Container $ContainerName -File $FilePath -Blob $BlobName -Context $StorageContext -Force
+        $null = Set-AzStorageBlobContent -Container $ContainerName -File $FilePath -Blob $BlobName -Context $StorageContext -Force -ErrorAction Stop
+        Write-Verbose "Uploaded to Azure Blob Storage!"
     }
 }
 #endregion
