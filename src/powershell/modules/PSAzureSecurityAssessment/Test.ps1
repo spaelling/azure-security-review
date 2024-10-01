@@ -1,3 +1,3 @@
-Import-Module -Name PSScriptAnalyzer
+Import-Module -Name PSScriptAnalyzer -ErrorAction Stop
 
-Clear-Host; Invoke-ScriptAnalyzer -Path .\src\powershell\modules\PSAzureSecurityAssessment\PSAzureSecurityAssessment.psm1 -ExcludeRule PSAvoidTrailingWhitespace
+Clear-Host; Invoke-ScriptAnalyzer -Path ".\PSAzureSecurityAssessment.psm1" -ExcludeRule PSAvoidTrailingWhitespace
