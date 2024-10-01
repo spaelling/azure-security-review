@@ -6,6 +6,12 @@ The notebook approach allows for use of many different languages and frameworks.
 
 Combined with Markdown, this allows for verbosity to a level that is hard to beat with any other tooling, and insights gained literally with the click of a button.
 
+## News
+
+All code regarding Entra ID has been converted to a Powershell module, published to [PSAzureSecurityAssessment](https://www.powershellgallery.com/packages/PSAzureSecurityAssessment/).
+
+Also added `Write-EntraIdAssessment` which will output a Markdown file (and optionally upload to an Azure Storage Account). This even supports multi tenant assessments, supported by `New-MultiTenantApplication` which can create a multi-tenant application to be used for these types of assessments (or just a single tenant).
+
 ## Notes
 
 These are the controls/checks that are implemented, planned, or work in progress.
