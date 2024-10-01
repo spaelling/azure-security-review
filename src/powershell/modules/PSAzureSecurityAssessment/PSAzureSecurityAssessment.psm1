@@ -1690,9 +1690,12 @@ This is the pure powershell based Entra ID assessment. It will strongly correlat
 function Write-EntraIdAssessment {
     [CmdletBinding()]
     param(
-        [string]$TenantId = "1b775964-7849-4f1a-8052-60b8e5c59b96",
+        [string]$TenantId,
         [string]$OutputFolder = ".\",
-        [SecureString]$AccessToken = $null
+        [SecureString]$AccessToken = $null,
+        [string]$StorageAccountName = $null,
+        [string]$StorageAccountTenantId = $null,
+        [string]$ContainerName = "entra-id"
     )
 
     Initialize-Notebook -TenantId $TenantId -AccessToken $AccessToken   
@@ -2023,7 +2026,25 @@ $((Test-ProtectedAction) -join "`n")
 "@
     #endregion
 
-    $FilePath = "$OutputFolder\entra-id-$TenantId.md"
+    $FileName = "entra-id-$TenantId.md"
+    $FilePath = "$OutputFolder\$FileName"
     $Markdown | Out-File -FilePath $FilePath
+
+    # upload to Azure Blob Storage
+    if ($null -ne $StorageAccountName -and $null -ne $StorageAccountTenantId) {
+        # switch to the storage account tenant
+        $null = Set-AzContext -TenantId $StorageAccountTenantId
+        # Blob name is the same as the file name
+        $BlobName = $FileName
+        # create storage context with OAuth (Microsoft Entra ID) Authentication
+        $StorageContext = New-AzStorageContext -StorageAccountName $StorageAccountName -UseConnectedAccount -ErrorAction Stop
+        # create container if not exist
+        $Container = Get-AzStorageContainer -Name $ContainerName -Context $StorageContext -ErrorAction SilentlyContinue
+        if ($null -eq $Container) {
+            $Container = New-AzStorageContainer -Name $ContainerName -Context $StorageContext
+        }
+        # upload file
+        $null = Set-AzStorageBlobContent -Container $ContainerName -File $FilePath -Blob $BlobName -Context $StorageContext -Force
+    }
 }
 #endregion
