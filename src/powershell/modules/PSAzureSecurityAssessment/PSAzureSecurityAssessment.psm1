@@ -441,11 +441,17 @@ function Initialize-Notebook {
     param (
         $TenantId = $Global:TenantId,
         $Scopes = @("Directory.AccessAsUser.All", "Policy.Read.All", "RoleManagement.Read.Directory", "RoleManagementAlert.Read.Directory", "AccessReview.Read.All", "Application.Read.All", "Directory.Read.All", "AuditLog.Read.All", "CrossTenantInformation.ReadBasic.All"),
-        [SecureString]$AccessToken = $null
+        [SecureString]$AccessToken = $null,
+        [switch]$RunZeroTrustAssessment
     )
 
     # these scopes are added automatically. To avoid a difference when comparing scopes we add them now
     $Scopes = $Scopes + @('profile', 'openid', 'User.Read', 'email') | Sort-Object -Unique
+    if($RunZeroTrustAssessment.IsPresent)
+    {
+        # need some additional scopes for this
+        $Scopes = $Scopes + @('Agreement.Read.All','DeviceManagementServiceConfig.Read.All','DeviceManagementConfiguration.Read.All','DeviceManagementRBAC.Read.All','DeviceManagementApps.Read.All','RoleAssignmentSchedule.Read.Directory','RoleEligibilitySchedule.Read.Directory','PrivilegedEligibilitySchedule.Read.AzureADGroup')
+    }
     $TenantId = $Global:TenantId = if ($null -eq $TenantId) { Read-Host -Prompt "Enter tenant ID" } else { $TenantId }
 
     # TODO: write a warning if any scope is a write scope
@@ -1759,10 +1765,22 @@ function Write-EntraIdAssessment {
         [SecureString]$AccessToken = $null,
         [string]$StorageAccountName = $null,
         [string]$StorageAccountTenantId = $null,
-        [string]$ContainerName = "entra-id"
+        [string]$ContainerName = "entra-id",
+        [switch]$RunZeroTrustAssessment
     )
 
-    Initialize-Notebook -TenantId $TenantId -AccessToken $AccessToken   
+    Initialize-Notebook -TenantId $TenantId -AccessToken $AccessToken
+
+    if($RunZeroTrustAssessment.IsPresent)
+    {
+        Write-Verbose "Importing module 'ZeroTrustAssessment'"
+        $null = Import-Module -Name "ZeroTrustAssessment" -ErrorAction Stop
+        Write-Verbose "Running Zero Trust Assessment..."
+        Invoke-ZTAssessment -AccessToken (ConvertFrom-SecureString $AccessToken -AsPlainText)
+        # Cannot control ouput when using AccessToken parameter
+        $ZTTimeStamp = Get-Date -Format "yyyy-MM-dd" # cannot hit the exact timestamp so veering on the safe side and using just todays date
+        $ZTAssessmentOutput = Get-ChildItem -Filter "ZeroTrustAssessment-$ZTTimeStamp*.xlsx" | Select-Object -ExpandProperty FullName -First 1
+    }
 
     #region Markdown here-string
     $Markdown = @"
@@ -2126,7 +2144,7 @@ $((Test-EntraIdDiagnosticSetting -OutputMarkdown) -join "`n")
         Write-Verbose "Uploaded to Azure Blob Storage!"
 
         if ($ConvertToPdf.IsPresent) {
-            Write-Verbose "Converting to PDF"
+            Write-Verbose "Converting to PDF..."
             try {
                 $null = docker ps
                 $WorkingDirectory = (Resolve-Path $OutputFolder).Path
@@ -2142,6 +2160,15 @@ $((Test-EntraIdDiagnosticSetting -OutputMarkdown) -join "`n")
                 Write-Warning "Docker daemon is not running. Unable to convert to PDF"
             }
         }
+
+        if($RunZeroTrustAssessment.IsPresent)
+        {
+            Write-Verbose "Uploading ZTAssessment (Excel) to Azure Blob Storage..."
+            $FilePath = $ZTAssessmentOutput
+            $BlobName = "$TimeStamp/$(Split-Path -Leaf $FilePath)"
+            $null = Set-AzStorageBlobContent -Container $ContainerName -File $FilePath -Blob $BlobName -Context $StorageContext -Force -ErrorAction Stop
+            Write-Verbose "Uploaded ZTAssessment (Excel) to Azure Blob Storage!"          
+        }        
     }
 }
 #endregion
